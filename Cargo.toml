@@ -9,6 +9,11 @@ futures = "0.3.32"
 chrono = "0.4.45"
 uom = "0.38.0"
 bytes = "1.12.1"
+show-option = "0.2.0"
+lazy_format = "2.0.3"
+bitvec = "1"
+itu1371 = { path = "../itu1371"}
+deku = "0.20.3"
 
 [dev-dependencies]
 tokio = { version = "1.52.3", features = ["full"] }

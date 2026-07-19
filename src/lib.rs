@@ -1,50 +1,135 @@
 //! A codec for NMEA 1083 sentences.
 
-pub mod ais;
+use show_option::prelude::*;
 
-use chrono::{DateTime, Utc};
+use std::fmt::{Display, Formatter, Write};
+use bitvec::field::BitField;
+use bitvec::prelude::{BitSlice, BitVec, Msb0};
+
+pub mod types;
+
 use bytes::{BufMut, Bytes, BytesMut};
+use chrono::{DateTime, Utc};
 use tokio_util::codec::Encoder;
+use types::{AisChannel, CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
 use uom::si::angle::degree;
-use uom::si::f64::{Angle, Velocity};
 use uom::si::velocity::knot;
+use bitvec::slice::ChunksExact;
+use deku::DekuContainerWrite;
 
-pub struct Latitude(pub Angle);
-pub struct Longitude(pub Angle);
-pub struct Position {
-    pub latitude: Latitude,
-    pub longitude: Longitude,
+pub struct TagBlock {}
+
+pub enum Sentence {
+    RMC(RMC),
+    VDM(AisMessage),
+    VDO(AisMessage),
 }
 
-pub struct SpeedOverGround(Velocity);
-pub struct CourseOverGround(Angle);
-pub struct MagneticVariation(Angle);
-
-pub enum PositioningSystemStatus {
-    Valid,
-    Warning,
+pub struct Sequence {
+    pub total: u8,
+    pub item: u8,
+    pub id: Option<u8>,
+}
+impl Default for Sequence {
+    fn default() -> Self {
+        Self { total: 1, item: 1, id: None }
+    }
+}
+impl Display for Sequence {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{},{},{}", self.total, self.item, format_option!(self.id, "{}", ""))
+    }
 }
 
-pub enum PositioningSystemMode {
-    NoFix,
-    Autonomous,
-    Differential,
-    Estimated,
-    Manual,
-    Precise,
-    FixedRTK,
-    FloatRTK,
-    Simulator,
+pub struct Armored {
+    data: Bytes,
+    padding: u8,
 }
 
-pub enum NavigationalStatus {
-    Safe,
-    Caution,
-    Unsafe,
-    NotValid,
+impl Armored {
+    pub fn from_bits(data: &BitSlice<u8, Msb0>) -> Self {
+        let mut result = BytesMut::with_capacity((data.len() + 5) / 6);
+        let mut chunks = data.chunks_exact(6);
+        while let Some(chunk) = chunks.next() {
+            result.put_u8(armor(chunk.load_be()));
+        }
+        let remainder = chunks.remainder();
+        let padding = if remainder.is_empty() {
+            0u8
+        } else {
+            let padding = 6 - remainder.len();
+            result.put_u8(armor(remainder.load_be::<u8>() << padding));
+            padding as u8
+        };
+        Self{data: result.freeze(), padding}
+    }
+
 }
 
-pub struct Rmc {
+fn armor(byte: u8) -> u8 {
+    match byte {
+        .. 0b101000 => byte + 0b00110000,
+        _ => byte + 0b00111000,
+    }
+}
+
+impl Display for Armored {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // SAFETY: Data can only contain ASCII characters.
+        write!(f, "{},{}", unsafe { str::from_utf8_unchecked(self.data.as_ref()) }, self.padding)
+    }
+}
+
+pub struct Encapsulation {
+    pub sequence: Sequence,
+    pub data: Armored,
+}
+
+pub struct Message {
+    pub tag_block: Option<TagBlock>,
+    pub sentence: Sentence,
+}
+
+pub struct NmeaCodec {}
+
+impl NmeaCodec {
+    /// Creates a codec for NMEA 0183/ISO 61162-1 messages.
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Encoder<Message> for NmeaCodec {
+    type Error = std::io::Error;
+
+    fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let start = dst.len();
+        self.encode(item.sentence, dst)?;
+        put_checksum(start + 1, dst);
+        Ok(())
+    }
+}
+
+impl Encoder<Sentence> for NmeaCodec {
+    type Error = std::io::Error;
+
+    fn encode(&mut self, item: Sentence, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        match item {
+            Sentence::RMC(rmc) => rmc.encode(dst),
+            Sentence::VDO(msg) => msg.encode("VDO", dst),
+            Sentence::VDM(msg) => msg.encode("VDM", dst),
+        }
+        Ok(())
+    }
+}
+
+fn put_checksum(start: usize, dst: &mut BytesMut) {
+    let checksum = dst.as_ref()[start..].iter().fold(0u8, |sum, byte| sum ^ *byte);
+    write!(dst, "*{checksum:02X}").expect("Failed to write checksum")
+}
+
+pub struct RMC {
+    pub talker_id: Talker,
     pub time_of_fix: Option<DateTime<Utc>>,
     pub position: Option<Position>,
     pub sog: Option<SpeedOverGround>,
@@ -55,9 +140,10 @@ pub struct Rmc {
     pub navigational_status: NavigationalStatus,
 }
 
-impl Default for Rmc {
-    fn default() -> Self {
+impl RMC {
+    pub fn new(talker: Talker) -> Self {
         Self {
+            talker_id: talker,
             time_of_fix: None,
             position: None,
             sog: None,
@@ -68,153 +154,134 @@ impl Default for Rmc {
             navigational_status: NavigationalStatus::NotValid,
         }
     }
-}
 
-pub struct Encapsulated {
-    data: Bytes
-}
-
-pub enum Sentence {
-    RMC(Rmc),
-}
-
-pub struct Message {
-    pub sentence: Sentence,
-}
-
-pub struct NmeaCodec {
-    with_crlf: bool,
-}
-
-impl NmeaCodec {
-    /// Creates a codec for bare sentences without the CRLF separator.
-    ///
-    /// Sentence separation must be provided by the underlying transport such as UDP datagrams.
-    pub fn new() -> Self {
-        Self { with_crlf: false }
-    }
-
-    /// Creates a codec with sentences separated by CRLF.
-    ///
-    /// This is intended for use with streams where sepration is required, such as a serial line
-    /// or TCP connection.
-    pub fn with_crlf() -> Self {
-        Self { with_crlf: true }
+    pub fn encode(&self, dst: &mut BytesMut) {
+        write!(
+            dst,
+            "${talker}RMC,{time},{status},{lat},{long},{sog},{cog},{date},{var},{mode},{nav}",
+            talker = self.talker_id,
+            date = format_option!(self.time_of_fix.map(|time| { time.format("%d%m%y") }), "{}", ""),
+            time = format_option!(self.time_of_fix.map(|time| { time.format("%H%M%S%.f") }), "{}", ""),
+            status = self.status,
+            lat = format_option!(self.position.as_ref().map(|v| &v.latitude), "{}", ","),
+            long = format_option!(self.position.as_ref().map(|v| &v.longitude), "{}", ","),
+            sog = format_option!(self.sog.as_ref().map(|v| v.0.get::<knot>()), "{}", ""),
+            cog = format_option!(self.cog.as_ref().map(|v| v.0.get::<degree>()), "{:.0}", ""),
+            var = format_option!(self.magnetic_variation, "{}", ","),
+            mode = self.mode,
+            nav = self.navigational_status,
+        )
+        .expect("Failed to encode RMC")
     }
 }
 
-impl Encoder<Message> for NmeaCodec {
-    type Error = std::io::Error;
+pub struct AisMessage {
+    pub talker_id: Talker,
+    pub channel: Option<AisChannel>,
+    pub message: Encapsulation,
+}
 
-    fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.put_u8(b'$');
-        let start = dst.len();
-        dst.put_slice(b"xx");
-        match item.sentence {
-            Sentence::RMC(rmc) => self.encode(rmc, dst)?,
+impl AisMessage {
+    pub fn new(talker_id: Talker, sequence: Sequence, channel: Option<AisChannel>, data: &BitSlice<u8, Msb0>) -> Self {
+        let data = Armored::from_bits(data);
+        Self{
+            talker_id,
+            channel,
+            message: Encapsulation {
+                sequence,
+                data,
+            },
         }
-        let checksum = dst.as_ref()[start..].iter().fold(0u8, |sum, byte| sum ^ *byte);
-        dst.put_slice(format!("*{checksum:02X}").as_bytes());
-        if self.with_crlf {
-            dst.put_slice(b"\r\n");
+    }
+    pub fn encode(&self, id: &'static str, dst: &mut BytesMut) {
+        write!(
+            dst,
+            "!{talker}{id},{sequence},{channel},{data}",
+            talker = self.talker_id,
+            sequence = self.message.sequence,
+            channel = format_option!(self.channel, "{}", ",,"),
+            data = self.message.data,
+        )
+        .expect("Failed to encode AisMessage");
+    }
+}
+
+pub trait IntoVDM {
+    fn into_vdm(self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> AisMessageSequence;
+}
+
+impl IntoVDM for itu1371::Message {
+    fn into_vdm(self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> AisMessageSequence {
+        let bits = self.to_bits().expect("");
+        AisMessageSequence::new(talker, sequence, channel, bits)
+    }
+}
+
+pub struct AisMessageSequence {
+    talker: Talker,
+    id: Option<u8>,
+    channel: Option<AisChannel>,
+    bits: BitVec<u8, Msb0>,
+}
+
+impl AisMessageSequence {
+    pub fn new(talker: Talker, id: Option<u8>, channel: Option<AisChannel>, bits: BitVec<u8, Msb0>) -> Self {
+        AisMessageSequence{ talker, id, channel, bits}
+    }
+    pub fn messages(&self) -> AisMessageIterator<'_> {
+        AisMessageIterator::new(self.talker, self.id, self.channel, &self.bits)
+    }
+}
+
+pub struct AisMessageIterator<'a> {
+    talker: Talker,
+    sequence_id: Option<u8>,
+    channel: Option<AisChannel>,
+    chunks: ChunksExact<'a, u8, Msb0>,
+    size: usize,
+    current: usize,
+}
+
+impl<'a> AisMessageIterator<'a> {
+    pub fn new(talker: Talker, sequence_id: Option<u8>, channel: Option<AisChannel>, bits: &'a BitVec<u8, Msb0>) -> Self {
+        let size = (bits.len() + (60 * 6 - 1)) / (60 * 6);
+        let chunks = bits.chunks_exact(60 * 6);
+        Self {
+            talker,
+            sequence_id,
+            channel,
+            chunks,
+            size,
+            current: 0,
         }
-        Ok(())
     }
 }
 
-impl Encoder<Rmc> for NmeaCodec {
-    type Error = std::io::Error;
+impl<'a> Iterator for AisMessageIterator<'a> {
+    type Item = Message;
 
-    fn encode(&mut self, item: Rmc, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.put_slice(b"RMC");
-        write_time(item.time_of_fix, dst);
-        dst.put_u8(b',');
-        match item.status {
-            PositioningSystemStatus::Valid => dst.put_u8(b'A'),
-            PositioningSystemStatus::Warning => dst.put_u8(b'V'),
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == self.size {
+            return None;
         }
-        write_position(item.position, dst);
-        write_sog(item.sog, dst);
-        write_cog(item.cog, dst);
-        write_date(item.time_of_fix, dst);
-        write_magnetic_variation(item.magnetic_variation, dst);
-        dst.put_u8(b',');
-        dst.put_u8(match item.mode {
-            PositioningSystemMode::NoFix => b'N',
-            PositioningSystemMode::Autonomous => b'A',
-            PositioningSystemMode::Differential => b'D',
-            PositioningSystemMode::Manual => b'M',
-            PositioningSystemMode::Estimated => b'E',
-            PositioningSystemMode::Precise => b'P',
-            PositioningSystemMode::FixedRTK => b'R',
-            PositioningSystemMode::FloatRTK => b'F',
-            PositioningSystemMode::Simulator => b'S',
-        });
-        dst.put_u8(b',');
-        dst.put_u8(match item.navigational_status {
-            NavigationalStatus::Safe => b'S',
-            NavigationalStatus::Caution => b'C',
-            NavigationalStatus::Unsafe => b'U',
-            NavigationalStatus::NotValid => b'V',
-        });
-        Ok(())
-    }
-}
+        self.current += 1;
 
-fn write_sog(item: Option<SpeedOverGround>, dst: &mut BytesMut) {
-    if let Some(sog) = item {
-        dst.put_slice(format!(",{:.2}", sog.0.get::<knot>()).as_bytes());
-    } else {
-        dst.put_u8(b',');
-    }
-}
+        let sequence = Sequence {
+            total: self.size as u8,
+            item: self.current as u8,
+            id: self.sequence_id,
+        };
 
-fn write_cog(item: Option<CourseOverGround>, dst: &mut BytesMut) {
-    if let Some(cog) = item {
-        dst.put_slice(format!(",{:.2}", cog.0.get::<degree>()).as_bytes());
-    } else {
-        dst.put_u8(b',');
+        let data = match self.chunks.next() {
+            Some(chunk) => chunk,
+            None => self.chunks.remainder(),
+        };
+        let ais_message = AisMessage::new(self.talker, sequence, self.channel, data);
+        let sentence = Sentence::VDM(ais_message);
+        Some(Message { tag_block: None, sentence })
     }
-}
 
-fn write_magnetic_variation(item: Option<MagneticVariation>, dst: &mut BytesMut) {
-    if let Some(variation) = item {
-        let angle = variation.0.get::<degree>();
-        dst.put_slice(format!(",{:.2},{}", angle.abs(), if angle >= 0.0 { 'E' } else { 'W' }).as_bytes());
-    } else {
-        dst.put_slice(b",,");
-    }
-}
-
-fn write_position(item: Option<Position>, dst: &mut BytesMut) {
-    if let Some(position) = item {
-        let latitude = position.latitude.0.get::<degree>();
-        let lat_cardinal = if latitude >= 0.0 { 'N' } else { 'S' };
-        let lat_degrees = latitude.abs().trunc();
-        let lat_minutes = latitude.abs().fract() * 60.0;
-        let longitude = position.longitude.0.get::<degree>();
-        let long_cardinal = if longitude >= 0.0 { 'E' } else { 'W' };
-        let long_degrees = longitude.abs().trunc();
-        let long_minutes = longitude.abs().fract() * 60.0;
-        dst.put_slice(format!(",{lat_degrees:02}{lat_minutes:07.4},{lat_cardinal},{long_degrees:03}{long_minutes:07.4},{long_cardinal}",).as_bytes());
-    } else {
-        dst.put_slice(b",,,,")
-    }
-}
-
-fn write_date(date: Option<DateTime<Utc>>, dst: &mut BytesMut) {
-    if let Some(date) = date {
-        _ = date.format(",%d%m%y").write_to(dst);
-    } else {
-        dst.put_slice(b",")
-    }
-}
-
-fn write_time(time: Option<DateTime<Utc>>, dst: &mut BytesMut) {
-    if let Some(time) = time {
-        _ = time.format(",%H%M%S").write_to(dst);
-        _ = dst.put_slice(format!(".{:02}", time.timestamp_subsec_millis() / 10).as_bytes());
-    } else {
-        dst.put_slice(b",")
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.size, Some(self.size))
     }
 }
