@@ -12,7 +12,7 @@ bytes = "1.12.1"
 show-option = "0.2.0"
 lazy_format = "2.0.3"
 bitvec = "1"
-itu1371 = { path = "../itu1371"}
+ais_rs = { path = "../ais_rs" }
 deku = "0.20.3"
 
 [dev-dependencies]

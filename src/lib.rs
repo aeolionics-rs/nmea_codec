@@ -210,7 +210,7 @@ pub trait IntoVDM {
     fn into_vdm(self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> AisMessageSequence;
 }
 
-impl IntoVDM for itu1371::Message {
+impl IntoVDM for ais_rs::Message {
     fn into_vdm(self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> AisMessageSequence {
         let bits = self.to_bits().expect("");
         AisMessageSequence::new(talker, sequence, channel, bits)

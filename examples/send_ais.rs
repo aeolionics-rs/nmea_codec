@@ -1,6 +1,6 @@
 use bytes::BytesMut;
-use itu1371::Message::ScheduledPositionReport;
-use itu1371::{CommunicationState, CourseOverGround, Heading, MMSI, NavigationalStatus, PositionAccuracy, RaimFlag, RateOfTurn, RepeatCount, ShipPositionReport, SpecialManoeuvre, SpeedOverGround, StationPosition, Timestamp, TransmitPower};
+use ais_rs::Message::ScheduledPositionReport;
+use ais_rs::{CommunicationState, CourseOverGround, Heading, MMSI, NavigationalStatus, PositionAccuracy, RaimFlag, RateOfTurn, RepeatCount, ShipPositionReport, SpecialManoeuvre, SpeedOverGround, StationPosition, Timestamp, TransmitPower};
 use nmea_codec::types::{AisChannel, Talker};
 use nmea_codec::{IntoVDM, NmeaCodec};
 use tokio_util::codec::Encoder;
