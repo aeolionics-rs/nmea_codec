@@ -1,14 +1,14 @@
 use bytes::BytesMut;
 use ais_rs::Message::ScheduledPositionReport;
-use ais_rs::{CommunicationState, CourseOverGround, Heading, MMSI, NavigationalStatus, PositionAccuracy, RaimFlag, RateOfTurn, RepeatCount, ShipPositionReport, SpecialManoeuvre, SpeedOverGround, StationPosition, Timestamp, TransmitPower};
+use ais_rs::{CommunicationState, CourseOverGround, Heading, MMSI, NavigationalStatus, PositionAccuracy, RaimFlag, RateOfTurn, RepeatCount, PositionReport, SpecialManoeuvre, SpeedOverGround, StationPosition, Timestamp, TransmitPower};
 use nmea_codec::types::{AisChannel, Talker};
 use nmea_codec::{IntoVDM, NmeaCodec};
 use tokio_util::codec::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let ais_msg = ScheduledPositionReport(ShipPositionReport {
-        repeat: RepeatCount(2),
-        source: MMSI(127),
+    let ais_msg = ScheduledPositionReport(PositionReport {
+        repeat: RepeatCount::Twice,
+        source: MMSI::new(127).unwrap(),
         status: NavigationalStatus::UnderWay,
         rate_of_turn: RateOfTurn(5),
         speed_over_ground: SpeedOverGround(0b1001100100),
