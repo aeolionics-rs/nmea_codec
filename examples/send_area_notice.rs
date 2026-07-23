@@ -1,13 +1,15 @@
-use ais_rs::asms::area_notice::{Description, Position, Radius, Scale, SubArea};
-use ais_rs::asms::Linkage;
-use ais_rs::{asms, BroadcastApplicationMessage, Message, Minutes, MonthDayHourMinute, MMSI};
+use ais_rs::asm;
+use ais_rs::asm::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};
+use ais_rs::asm::Linkage;
+use ais_rs::message::BroadcastApplicationMessage;
+use ais_rs::types::{Minutes, MonthDayHourMinute, MMSI};
 use bytes::BytesMut;
 use nmea_codec::types::{AisChannel, Talker};
 use nmea_codec::{IntoVDM, NmeaCodec};
 use tokio_util::codec::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let notice = asms::area_notice::AreaNotice {
+    let notice = AreaNotice {
         linkage: Linkage(501),
         description: Description::MammalsInArea_ReduceSpeed,
         start: MonthDayHourMinute { month: 7, day: 21, hour: 13, minute: 45 },
@@ -35,10 +37,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
 
-    let ais_msg = Message::BinaryBroadcastMessage(BroadcastApplicationMessage {
+    let ais_msg = ais_rs::Message::BroadcastBinaryMessage(BroadcastApplicationMessage {
         repeat_count: Default::default(),
         source: MMSI::new(3669999)?,
-        message: asms::BroadcastApplicationMessage::AreaNotice(notice),
+        message: asm::BroadcastApplicationMessage::AreaNotice(notice)
     });
 
     let mut encoder = NmeaCodec::new();

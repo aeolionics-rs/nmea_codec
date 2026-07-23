@@ -1,9 +1,10 @@
 use bytes::BytesMut;
 use ais_rs::Message::ScheduledPositionReport;
-use ais_rs::{CommunicationState, CourseOverGround, Heading, MMSI, NavigationalStatus, PositionAccuracy, RaimFlag, RateOfTurn, RepeatCount, PositionReport, SpecialManoeuvre, SpeedOverGround, StationPosition, Timestamp, TransmitPower};
+use ais_rs::types::*;
 use nmea_codec::types::{AisChannel, Talker};
 use nmea_codec::{IntoVDM, NmeaCodec};
 use tokio_util::codec::Encoder;
+use ais_rs::message::PositionReport;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ais_msg = ScheduledPositionReport(PositionReport {
