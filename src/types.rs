@@ -155,7 +155,7 @@ pub struct Latitude(pub Angle);
 impl Display for Latitude {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let degrees = self.0.get::<degree>().abs();
-        write!(f, "{:02}{:02},{}", degrees.trunc(), degrees.fract() * 60.0, if self.0.is_sign_positive() { 'N' } else { 'S' })
+        write!(f, "{:02}{:5.02},{}", degrees.trunc(), degrees.fract() * 60.0, if self.0.is_sign_positive() { 'N' } else { 'S' })
     }
 }
 
@@ -164,7 +164,7 @@ pub struct Longitude(pub Angle);
 impl Display for Longitude {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let degrees = self.0.get::<degree>().abs();
-        write!(f, "{:02}{:02},{}", degrees.trunc(), degrees.fract() * 60.0, if self.0.is_sign_positive() { 'E' } else { 'W' })
+        write!(f, "{:02}{:5.02},{}", degrees.trunc(), degrees.fract() * 60.0, if self.0.is_sign_positive() { 'E' } else { 'W' })
     }
 }
 
