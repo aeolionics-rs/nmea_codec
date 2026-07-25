@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ais_msg = ais_rs::Message::BroadcastBinaryMessage(BroadcastApplicationMessage {
         repeat_count: Default::default(),
         source: MMSI::new(3669999)?,
-        message: asm::BroadcastApplicationMessage::AreaNotice(notice)
+        message: asm::Broadcast::AreaNotice(notice)
     });
 
     let mut encoder = NmeaCodec::new();
