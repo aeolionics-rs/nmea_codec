@@ -1,10 +1,10 @@
-use bytes::BytesMut;
 use ais_rs::Message::ScheduledPositionReport;
+use ais_rs::message::PositionReport;
 use ais_rs::types::*;
+use bytes::BytesMut;
 use nmea_codec::types::{AisChannel, Talker};
 use nmea_codec::{IntoVDM, NmeaCodec};
 use tokio_util::codec::Encoder;
-use ais_rs::message::PositionReport;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ais_msg = ScheduledPositionReport(PositionReport {
@@ -13,14 +13,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         status: NavigationalStatus::UnderWay,
         rate_of_turn: RateOfTurn(5),
         speed_over_ground: SpeedOverGround(0b1001100100),
-        position: StationPosition {
-            accuracy: PositionAccuracy::Low,
-            longitude: 0b0000111101111111010010010000,
-            latitude: 0b000001011101000101000010000,
-        },
+        position: StationPosition::new(5.0 + 5.0 / 60.0, 27.0 + 5.0 / 60.0, PositionAccuracy::Low),
         course_over_ground: CourseOverGround(0b001110111111),
         heading: Heading(0b101011111),
-        timestamp: Timestamp(0b110101),
+        timestamp: Timestamp::Second(53),
         manoeuvre: SpecialManoeuvre::NotAvailable,
         transmit_power: TransmitPower::High,
         raim: RaimFlag::NotInUse,

@@ -17,20 +17,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         subareas: vec![
             SubArea::Circle {
                 scale: Scale(0),
-                position: Position {
-                    latitude: (42.386320965494704 * 60_000.0) as i32,
-                    longitude: (-70.91003783738283 * 60_000.0) as i32,
-                    precision: 4,
-                },
+                position: Position::new(42.386320965494704, -70.91003783738283, 4),
                 radius: Radius(0),
             },
             SubArea::Circle {
                 scale: Scale(0),
-                position: Position {
-                    latitude: (42.386320965494704 * 60_000.0) as i32,
-                    longitude: (-70.91003783738283 * 60_000.0) as i32,
-                    precision: 4,
-                },
+                position: Position::new(42.386320965494704, -70.91003783738283, 4),
                 radius: Radius(4000),
             },
         ],
@@ -38,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
     let ais_msg = ais_rs::Message::BroadcastBinaryMessage(BroadcastApplicationMessage {
-        repeat_count: Default::default(),
+        repeat: Default::default(),
         source: MMSI::new(3669999)?,
         message: asm::Broadcast::AreaNotice(notice)
     });
