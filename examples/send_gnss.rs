@@ -27,6 +27,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     buf.clear();
     encoder.encode(Message { tag_block: None, sentence }, &mut buf)?;
-    println!("{}", String::from_utf8_lossy(buf.as_ref()));
+    print!("{}", String::from_utf8_lossy(buf.as_ref()));
     Ok(())
 }

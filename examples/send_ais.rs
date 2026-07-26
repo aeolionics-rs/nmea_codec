@@ -31,6 +31,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut buf = BytesMut::with_capacity(1024);
     let msg = ais_msg.into_vdm(Talker::AIS, None, Some(AisChannel::A)).messages().next().unwrap();
     encoder.encode(msg, &mut buf)?;
-    assert_eq!(buf.as_ref(), b"!AIVDM,1,1,,A,1P000Oh1IT1svTP2r:43grwb05q4,0*71");
+    assert_eq!(buf.as_ref(), b"!AIVDM,1,1,,A,1P000Oh1IT1svTP2r:43grwb05q4,0*71\r\n");
     Ok(())
 }

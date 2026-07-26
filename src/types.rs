@@ -150,6 +150,7 @@ impl Display for Talker {
     }
 }
 
+#[derive(Clone)]
 pub struct Latitude(pub Angle);
 
 impl Display for Latitude {
@@ -159,6 +160,7 @@ impl Display for Latitude {
     }
 }
 
+#[derive(Clone)]
 pub struct Longitude(pub Angle);
 
 impl Display for Longitude {
@@ -168,15 +170,19 @@ impl Display for Longitude {
     }
 }
 
+#[derive(Clone)]
 pub struct Position {
     pub latitude: Latitude,
     pub longitude: Longitude,
 }
 
+#[derive(Clone)]
 pub struct SpeedOverGround(pub Velocity);
 
+#[derive(Clone)]
 pub struct CourseOverGround(pub Angle);
 
+#[derive(Clone)]
 pub struct MagneticVariation(pub Angle);
 
 impl Display for MagneticVariation {

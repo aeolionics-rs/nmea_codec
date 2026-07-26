@@ -17,14 +17,17 @@ use uom::si::velocity::knot;
 use bitvec::slice::ChunksExact;
 use deku::DekuContainerWrite;
 
+#[derive(Clone)]
 pub struct TagBlock {}
 
+#[derive(Clone)]
 pub enum Sentence {
     RMC(RMC),
     VDM(AisMessage),
     VDO(AisMessage),
 }
 
+#[derive(Clone)]
 pub struct Sequence {
     pub total: u8,
     pub item: u8,
@@ -41,6 +44,7 @@ impl Display for Sequence {
     }
 }
 
+#[derive(Clone)]
 pub struct Armored {
     data: Bytes,
     padding: u8,
@@ -80,11 +84,13 @@ impl Display for Armored {
     }
 }
 
+#[derive(Clone)]
 pub struct Encapsulation {
     pub sequence: Sequence,
     pub data: Armored,
 }
 
+#[derive(Clone)]
 pub struct Message {
     pub tag_block: Option<TagBlock>,
     pub sentence: Sentence,
@@ -106,6 +112,7 @@ impl Encoder<Message> for NmeaCodec {
         let start = dst.len();
         self.encode(item.sentence, dst)?;
         put_checksum(start + 1, dst);
+        dst.put_slice(b"\r\n");
         Ok(())
     }
 }
@@ -128,6 +135,7 @@ fn put_checksum(start: usize, dst: &mut BytesMut) {
     write!(dst, "*{checksum:02X}").expect("Failed to write checksum")
 }
 
+#[derive(Clone)]
 pub struct RMC {
     pub talker_id: Talker,
     pub time_of_fix: Option<DateTime<Utc>>,
@@ -175,6 +183,7 @@ impl RMC {
     }
 }
 
+#[derive(Clone)]
 pub struct AisMessage {
     pub talker_id: Talker,
     pub channel: Option<AisChannel>,
