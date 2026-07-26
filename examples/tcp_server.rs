@@ -5,10 +5,10 @@
 use chrono::SubsecRound;
 use futures::SinkExt;
 use nmea_codec::types::{CourseOverGround, Latitude, Longitude, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
-use nmea_codec::{Message, NmeaCodec, Sentence, RMC};
+use nmea_codec::{Message, NmeaCodec, Sentence};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
+use tokio::sync::broadcast::error::RecvError;
 use tokio_util::codec::FramedWrite;
 use uom::si::angle::degree;
 use uom::si::f64::{Angle, Velocity};
@@ -33,12 +33,13 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Spawn a task to send messages to the client.
             let receiver = messages.subscribe();
-            tokio::spawn(async move { send_message(receiver, stream).await });
+            tokio::spawn(async move { send_messages(receiver, stream).await });
         }
     });
 
     loop {
-        let sentence = Sentence::RMC(RMC {
+        let sentence = Sentence::RMC {
+            talker: Talker::GNSS,
             time_of_fix: Some(chrono::Utc::now().trunc_subsecs(2)),
             position: Some(Position {
                 latitude: Latitude(Angle::new::<degree>(47.0 + 36.6 / 60.0)),
@@ -46,12 +47,11 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
             sog: Some(SpeedOverGround(Velocity::new::<knot>(1.0))),
             cog: Some(CourseOverGround(Angle::new::<degree>(273.6))),
-            magnetic_variation: Some(MagneticVariation(Angle::new::<degree>(-10.0))),
+            variation: Some(MagneticVariation(Angle::new::<degree>(-10.0))),
             status: PositioningSystemStatus::Valid,
             mode: PositioningSystemMode::Autonomous,
-            navigational_status: NavigationalStatus::NotValid,
-            ..RMC::new(Talker::GNSS)
-        });
+            nav_status: NavigationalStatus::NotValid,
+        };
         let message = Message { tag_block: None, sentence };
 
         _ = tx.send(message);
@@ -59,7 +59,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn send_message(mut messages: Receiver<Message>, stream: TcpStream) -> std::io::Result<()> {
+async fn send_messages(mut messages: Receiver<Message>, stream: TcpStream) -> std::io::Result<()> {
     let mut writer = FramedWrite::with_capacity(stream, NmeaCodec::new(), 128);
     loop {
         match messages.recv().await {
