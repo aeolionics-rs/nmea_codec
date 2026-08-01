@@ -1,3 +1,7 @@
+//  SPDX-FileCopyrightText: 2026-2026. Aeolionics, LLC
+//
+//  SPDX-License-Identifier: Apache-2.0
+
 use ais_rs::asm;
 use ais_rs::asm::Linkage;
 use ais_rs::asm::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};

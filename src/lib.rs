@@ -1,5 +1,12 @@
-//! A codec for NMEA 1083 sentences.
+//  SPDX-FileCopyrightText: 2026-2026. Aeolionics, LLC
+//
+//  SPDX-License-Identifier: Apache-2.0
 
+//! A codec for NMEA 1083 sentences.
+/// A [`Decoder`] and [`Encoder`] for NMEA 0183 messages.
+///
+/// [`Decoder`]: Decoder
+/// [`Encoder`]: Encoder
 use show_option::prelude::*;
 
 use bitvec::bitvec;
@@ -44,47 +51,92 @@ pub struct Message {
     pub sentence: Sentence,
 }
 
+/// A block of tags containing additional metadata about the message.
 #[derive(Clone)]
 pub struct TagBlock {}
 
 /// A NMEA 0183 sentence.
 #[derive(Clone)]
 pub enum Sentence {
+    /// Recommended minimum specific GNSS data.
+    ///
+    /// Time, date, position, course and speed provided by a GNSS navigation receiver.
     RMC {
+        /// The device sending the message.
         talker: Talker,
+        /// Status of the positioning system.
         status: PositioningSystemStatus,
-        time_of_fix: Option<DateTime<Utc>>,
-        position: Option<Position>,
-        sog: Option<SpeedOverGround>,
-        cog: Option<CourseOverGround>,
-        variation: Option<MagneticVariation>,
+        /// Mode the position system is operating in.
         mode: PositioningSystemMode,
+        /// Navigation system status.
         nav_status: NavigationalStatus,
+        /// UTC time of position fix.
+        time_of_fix: Option<DateTime<Utc>>,
+        /// Position fix.
+        position: Option<Position>,
+        /// Speed over ground.
+        sog: Option<SpeedOverGround>,
+        /// True course over ground.
+        cog: Option<CourseOverGround>,
+        /// Magnetic variation at position.
+        ///
+        /// East is positive and subtracts from True course.
+        /// West is negative and adds to True course.
+        variation: Option<MagneticVariation>,
     },
     VDM(AisMessage),
     VDO(AisMessage),
+    /// A general Parametric Sentence.
+    ///
+    /// This variant can be used to send arbitrary data. It is produced by the [`Decoder`] when
+    /// the formatter mnemonic code is not recognized.
+    ///
+    /// [`Decoder`]: Decoder
     Parametric {
+        /// The device sending the message.
         talker: Talker,
+        /// The mnemonic code for the sentence formatter.
         mnemonic: String,
+        /// The raw fields in the sentence.
         fields: Vec<String>,
     },
+    /// A general purpose Sentence with encapsulated data.
+    ///
+    /// This variant can be used to send arbitrary binary messages. It is produced by the
+    /// [`Decoder`] when the formatter mnemonic code is not recognized.
+    ///
+    /// [`Decoder`]: Decoder
     Encapsulated {
+        /// The device sending the message.
         talker: Talker,
+        /// The mnemonic code for the sentence formatter.
         mnemonic: String,
+        /// The number of messages in this sequence.
         total: u8,
+        /// The number of this message in the sequence.
         sequence: u8,
+        /// An optional identifier for a sequence of messages.
         sequence_id: Option<u8>,
+        /// Additional data fields sent with the message.
         fields: Vec<String>,
+        /// The binary data that was encapsulated.
         bits: BitVec<u8, Msb0>,
     },
-    Proprietary {
-        mnemonic: String,
-        data: String,
-    },
+    /// A query sentence requesting transmission of an approved sentence.
     Query {
+        /// The device that sent the query.
         talker: Talker,
+        /// The device from which data is being requested.
         target: Talker,
+        /// The approved sentence formatter being requested.
         mnemonic: String,
+    },
+    /// A variant for handling undocumented, proprietary sentences.
+    Proprietary {
+        /// The manufacturer's mnemonic code.
+        mnemonic: String,
+        /// The manufacturer's data.
+        data: String,
     },
 }
 
@@ -372,7 +424,7 @@ mod tests {
         let mut codec = NmeaCodec::new();
         let mut buf = BytesMut::from("$Pxxxabc*48\r\n");
         let msg = codec.decode(&mut buf)?.unwrap();
-        if let Sentence::Proprietary {mnemonic, data} = msg.sentence {
+        if let Sentence::Proprietary { mnemonic, data } = msg.sentence {
             assert_eq!(mnemonic, "xxx");
             assert_eq!(data, "abc");
         } else {
@@ -380,12 +432,12 @@ mod tests {
         }
 
         buf.clear();
-        let msg = Message{
+        let msg = Message {
             tag_block: None,
             sentence: Sentence::Proprietary {
                 mnemonic: "yyy".to_string(),
                 data: "abcdef".to_string(),
-            }
+            },
         };
         codec.encode(msg, &mut buf)?;
         assert_eq!(buf.as_ref(), b"$Pyyyabcdef*2E\r\n");

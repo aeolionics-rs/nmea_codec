@@ -1,3 +1,7 @@
+//  SPDX-FileCopyrightText: 2026-2026. Aeolionics, LLC
+//
+//  SPDX-License-Identifier: Apache-2.0
+
 use ais_rs::Message::ScheduledPositionReport;
 use ais_rs::message::PositionReport;
 use ais_rs::types::*;

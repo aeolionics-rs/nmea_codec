@@ -2,6 +2,8 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
+//! Sentences encapsulating binary data from other protocols (e.g. AIS).
+//!
 use bitvec::field::BitField;
 use bitvec::order::Msb0;
 use bitvec::prelude::BitSlice;

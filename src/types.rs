@@ -1,8 +1,15 @@
+//  SPDX-FileCopyrightText: 2026-2026. Aeolionics, LLC
+//
+//  SPDX-License-Identifier: Apache-2.0
+
+//! Common data types used within messages.
+//!
 use std::fmt::{Display, Formatter, Write};
 use std::io::ErrorKind;
 use uom::si::angle::degree;
 use uom::si::f64::{Angle, Velocity};
 
+/// An identifier for a device.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Talker {
     /// AB: Independent AIS Base Station
@@ -196,7 +203,6 @@ pub enum Talker {
     User7,
     User8,
     User9,
-    Proprietary([u8; 3]),
     Other([u8; 2]),
 }
 
@@ -204,6 +210,10 @@ impl TryFrom<&str> for Talker {
     type Error = std::io::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.len() != 2 {
+            return Err(std::io::Error::new(ErrorKind::InvalidInput, "Invalid length"));
+        }
+
         Ok(match value {
             "AB" => Talker::IndependentAisBaseStation,
             "AD" => Talker::DependentAisBaseStation,
@@ -306,9 +316,10 @@ impl TryFrom<&str> for Talker {
             "U7" => Talker::User7,
             "U8" => Talker::User8,
             "U9" => Talker::User9,
-            _ if value.len() == 2 => Self::Other([value.as_bytes()[0], value.as_bytes()[1]]),
+
             _ => {
-                return Err(std::io::Error::new(ErrorKind::InvalidInput, "Invalid length"));
+                let value = value.as_bytes();
+                Self::Other([value[0], value[1]])
             }
         })
     }
@@ -360,21 +371,44 @@ impl Display for Talker {
             Talker::NonNorthSeekingGyroCompass => "HN",
             Talker::HullDoorMonitor => "HD",
             Talker::HullStressMonitor => "HS",
+            Talker::Heave => "HV",
+            Talker::IntegratedAutonomous => "IA",
             Talker::IntegratedInstrumentation => "II",
             Talker::IntegratedNavigation => "IN",
+            Talker::AlarmMonitoring => "JA",
+            Talker::ReeferMonitoring => "JB",
+            Talker::PowerManagement => "JC",
+            Talker::PropulsionControl => "JD",
+            Talker::EngineConsole => "JE",
+            Talker::PropulsionBoiler => "JF",
+            Talker::AuxiliaryBoiler => "JG",
+            Talker::ElectronicGovernor => "JH",
             Talker::LoranC => "LC",
+            Talker::Multiplexer => "MX",
+            Talker::AutonomousNavigation => "NA",
+            Talker::NetworkDevice => "ND",
+            Talker::NightVision => "NV",
             Talker::NavigationLight => "NL",
             Talker::Radar => "RA",
+            Talker::RecordBook => "RB",
             Talker::PropulsionMachinery => "RC",
+            Talker::RudderAngle => "RI",
+            Talker::Inclinometer => "RP",
+            Talker::AisPhysicalShoreStation => "SA",
+            Talker::SteeringControl => "SC",
             Talker::DepthSounder => "SD",
             Talker::Steering => "SG",
             Talker::PositioningSystem => "SN",
             Talker::ScanningSounder => "SS",
+            Talker::TrackControlSystem => "TC",
             Talker::TurnRateIndicator => "TI",
             Talker::Microprocessor => "UP",
             Talker::DopplerVelocity => "VD",
             Talker::MagneticSpeed => "VM",
             Talker::MechanicalSpeed => "VW",
+            Talker::VdesASM => "VA",
+            Talker::VdesSatellite => "VS",
+            Talker::VdesTerrestrial => "VT",
             Talker::VDR => "VR",
             Talker::WatertightDoor => "WD",
             Talker::WaterLevel => "WL",
@@ -395,33 +429,7 @@ impl Display for Talker {
             Talker::User7 => "U7",
             Talker::User8 => "U8",
             Talker::User9 => "U9",
-            Talker::Proprietary(val) => {
-                return write!(f, "P{}", str::from_utf8(val).map_err(|_| std::fmt::Error)?);
-            }
             Talker::Other(val) => str::from_utf8(val).map_err(|_| std::fmt::Error)?,
-            Talker::Heave => "HV",
-            Talker::IntegratedAutonomous => "IA",
-            Talker::AlarmMonitoring => "JA",
-            Talker::ReeferMonitoring => "JB",
-            Talker::PowerManagement => "JC",
-            Talker::PropulsionControl => "JD",
-            Talker::EngineConsole => "JE",
-            Talker::PropulsionBoiler => "JF",
-            Talker::AuxiliaryBoiler => "JG",
-            Talker::ElectronicGovernor => "JH",
-            Talker::Multiplexer => "MX",
-            Talker::AutonomousNavigation => "NA",
-            Talker::NetworkDevice => "ND",
-            Talker::NightVision => "NV",
-            Talker::RecordBook => "RB",
-            Talker::RudderAngle => "RI",
-            Talker::Inclinometer => "RP",
-            Talker::AisPhysicalShoreStation => "SA",
-            Talker::SteeringControl => "SC",
-            Talker::TrackControlSystem => "TC",
-            Talker::VdesASM => "VA",
-            Talker::VdesSatellite => "VS",
-            Talker::VdesTerrestrial => "VT",
         };
         f.write_str(s)
     }
