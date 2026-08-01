@@ -78,7 +78,6 @@ pub enum Sentence {
         bits: BitVec<u8, Msb0>,
     },
     Proprietary {
-        talker: Talker,
         mnemonic: String,
         data: String,
     },
@@ -140,7 +139,7 @@ impl Encoder<Sentence> for NmeaCodec {
             Sentence::Parametric { talker, mnemonic, .. } => write!(dst, "${}{}", talker, mnemonic),
             Sentence::Encapsulated { talker, mnemonic, .. } => write!(dst, "!{}{}", talker, mnemonic),
             Sentence::Query { talker, target, mnemonic } => write!(dst, "${talker}{target}Q,{mnemonic}"),
-            Sentence::Proprietary { talker, mnemonic, data } => write!(dst, "${talker}P{mnemonic}{data}"),
+            Sentence::Proprietary { mnemonic, data } => write!(dst, "$P{mnemonic}{data}"),
         }
         .expect("Failed to encode sentence");
         put_checksum(start + 1, dst);
@@ -217,14 +216,13 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
     let talker = Talker::try_from(&data[0..=1])?;
     let sentence = match kind {
         '$' => {
-            // Proprietary format: ttPnnn..
-            if data[2..].starts_with('P') {
-                if data.len() < 6 {
+            // Proprietary format: Pnnn..
+            if data.starts_with('P') {
+                if data.len() < 4 {
                     return Err(std::io::Error::new(ErrorKind::InvalidData, "Proprietary sentence too short"));
                 }
-                let (mnemonic, data) = data[3..].split_at(3);
+                let (mnemonic, data) = data[1..].split_at(3);
                 Sentence::Proprietary {
-                    talker,
                     mnemonic: mnemonic.to_string(),
                     data: data.to_string(),
                 }
@@ -366,6 +364,31 @@ mod tests {
         assert!(codec.decode(&mut buf)?.is_none());
         buf.put_slice(b"\r\n");
         assert!(codec.decode(&mut buf)?.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn proprietary() -> Result<(), std::io::Error> {
+        let mut codec = NmeaCodec::new();
+        let mut buf = BytesMut::from("$Pxxxabc*48\r\n");
+        let msg = codec.decode(&mut buf)?.unwrap();
+        if let Sentence::Proprietary {mnemonic, data} = msg.sentence {
+            assert_eq!(mnemonic, "xxx");
+            assert_eq!(data, "abc");
+        } else {
+            panic!("Unexpected sentence");
+        }
+
+        buf.clear();
+        let msg = Message{
+            tag_block: None,
+            sentence: Sentence::Proprietary {
+                mnemonic: "yyy".to_string(),
+                data: "abcdef".to_string(),
+            }
+        };
+        codec.encode(msg, &mut buf)?;
+        assert_eq!(buf.as_ref(), b"$Pyyyabcdef*2E\r\n");
         Ok(())
     }
 }
