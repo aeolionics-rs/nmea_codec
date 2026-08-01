@@ -2,24 +2,52 @@
 
 use show_option::prelude::*;
 
-use bitvec::field::BitField;
-use bitvec::prelude::{BitSlice, BitVec, Msb0};
-use std::fmt::{Display, Formatter, Write};
+use bitvec::bitvec;
+use bitvec::prelude::{BitVec, Msb0};
+use std::fmt::Write;
+use std::io::ErrorKind;
+use std::str::FromStr;
 
+pub mod ais;
+pub mod encapsulation;
 pub mod types;
 
-use bitvec::slice::ChunksExact;
-use bytes::{BufMut, Bytes, BytesMut};
+use ais::AisMessage;
+use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, Utc};
-use deku::DekuContainerWrite;
-use tokio_util::codec::Encoder;
-use types::{AisChannel, CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
+use tokio_util::codec::{Decoder, Encoder};
+use types::{CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
 use uom::si::angle::degree;
 use uom::si::velocity::knot;
+
+/// A [`Decoder`] and [`Encoder`] for NMEA 0183 messages.
+///
+/// [`Decoder`]: Decoder
+/// [`Encoder`]: Encoder
+pub struct NmeaCodec {
+    next: usize,
+}
+
+impl NmeaCodec {
+    /// Creates a new codec.
+    pub fn new() -> Self {
+        Self { next: 0 }
+    }
+}
+
+/// A NMEA 0183 message.
+///
+/// **Message format:** \[tag_block\] \<sentence\> \r\n
+#[derive(Clone)]
+pub struct Message {
+    pub tag_block: Option<TagBlock>,
+    pub sentence: Sentence,
+}
 
 #[derive(Clone)]
 pub struct TagBlock {}
 
+/// A NMEA 0183 sentence.
 #[derive(Clone)]
 pub enum Sentence {
     RMC {
@@ -35,83 +63,30 @@ pub enum Sentence {
     },
     VDM(AisMessage),
     VDO(AisMessage),
-}
-
-#[derive(Clone)]
-pub struct Sequence {
-    pub total: u8,
-    pub item: u8,
-    pub id: Option<u8>,
-}
-impl Default for Sequence {
-    fn default() -> Self {
-        Self { total: 1, item: 1, id: None }
-    }
-}
-impl Display for Sequence {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{},{},{}", self.total, self.item, format_option!(self.id, "{}", ""))
-    }
-}
-
-#[derive(Clone)]
-pub struct Armored {
-    data: Bytes,
-    padding: u8,
-}
-
-impl Armored {
-    pub fn from_bits(data: &BitSlice<u8, Msb0>) -> Self {
-        let mut result = BytesMut::with_capacity((data.len() + 5) / 6);
-        let mut chunks = data.chunks_exact(6);
-        while let Some(chunk) = chunks.next() {
-            result.put_u8(armor(chunk.load_be()));
-        }
-        let remainder = chunks.remainder();
-        let padding = if remainder.is_empty() {
-            0u8
-        } else {
-            let padding = 6 - remainder.len();
-            result.put_u8(armor(remainder.load_be::<u8>() << padding));
-            padding as u8
-        };
-        Self { data: result.freeze(), padding }
-    }
-}
-
-fn armor(byte: u8) -> u8 {
-    match byte {
-        ..0b101000 => byte + 0b00110000,
-        _ => byte + 0b00111000,
-    }
-}
-
-impl Display for Armored {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        // SAFETY: Data can only contain ASCII characters.
-        write!(f, "{},{}", unsafe { str::from_utf8_unchecked(self.data.as_ref()) }, self.padding)
-    }
-}
-
-#[derive(Clone)]
-pub struct Encapsulation {
-    pub sequence: Sequence,
-    pub data: Armored,
-}
-
-#[derive(Clone)]
-pub struct Message {
-    pub tag_block: Option<TagBlock>,
-    pub sentence: Sentence,
-}
-
-pub struct NmeaCodec {}
-
-impl NmeaCodec {
-    /// Creates a codec for NMEA 0183/ISO 61162-1 messages.
-    pub fn new() -> Self {
-        Self {}
-    }
+    Parametric {
+        talker: Talker,
+        mnemonic: String,
+        fields: Vec<String>,
+    },
+    Encapsulated {
+        talker: Talker,
+        mnemonic: String,
+        total: u8,
+        sequence: u8,
+        sequence_id: Option<u8>,
+        fields: Vec<String>,
+        bits: BitVec<u8, Msb0>,
+    },
+    Proprietary {
+        talker: Talker,
+        mnemonic: String,
+        data: String,
+    },
+    Query {
+        talker: Talker,
+        target: Talker,
+        mnemonic: String,
+    },
 }
 
 impl Encoder<Message> for NmeaCodec {
@@ -159,11 +134,15 @@ impl Encoder<Sentence> for NmeaCodec {
                 sog = format_option!(sog.as_ref().map(|v| v.0.get::<knot>()), "{}", ""),
                 cog = format_option!(cog.as_ref().map(|v| v.0.get::<degree>()), "{:.0}", ""),
                 var = format_option!(variation, "{}", ","),
-            )
-            .expect("Failed to encode RMC"),
+            ),
             Sentence::VDO(msg) => msg.encode("VDO", dst),
             Sentence::VDM(msg) => msg.encode("VDM", dst),
+            Sentence::Parametric { talker, mnemonic, .. } => write!(dst, "${}{}", talker, mnemonic),
+            Sentence::Encapsulated { talker, mnemonic, .. } => write!(dst, "!{}{}", talker, mnemonic),
+            Sentence::Query { talker, target, mnemonic } => write!(dst, "${talker}{target}Q,{mnemonic}"),
+            Sentence::Proprietary { talker, mnemonic, data } => write!(dst, "${talker}P{mnemonic}{data}"),
         }
+        .expect("Failed to encode sentence");
         put_checksum(start + 1, dst);
         dst.put_slice(b"\r\n");
         Ok(())
@@ -175,111 +154,218 @@ fn put_checksum(start: usize, dst: &mut BytesMut) {
     write!(dst, "*{checksum:02X}").expect("Failed to write checksum")
 }
 
-#[derive(Clone)]
-pub struct AisMessage {
-    pub talker_id: Talker,
-    pub channel: Option<AisChannel>,
-    pub message: Encapsulation,
-}
-
-impl AisMessage {
-    pub fn new(talker_id: Talker, sequence: Sequence, channel: Option<AisChannel>, data: &BitSlice<u8, Msb0>) -> Self {
-        let data = Armored::from_bits(data);
-        Self {
-            talker_id,
-            channel,
-            message: Encapsulation { sequence, data },
-        }
-    }
-    pub fn encode(&self, id: &'static str, dst: &mut BytesMut) {
-        write!(
-            dst,
-            "!{talker}{id},{sequence},{channel},{data}",
-            talker = self.talker_id,
-            sequence = self.message.sequence,
-            channel = format_option!(self.channel, "{}", ",,"),
-            data = self.message.data,
-        )
-        .expect("Failed to encode AisMessage");
-    }
-}
-
-pub trait IntoVDM {
-    fn into_vdm(self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> AisMessageSequence;
-}
-
-impl IntoVDM for ais_rs::Message {
-    fn into_vdm(self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> AisMessageSequence {
-        let bits = self.to_bits().expect("");
-        AisMessageSequence::new(talker, sequence, channel, bits)
-    }
-}
-
-pub struct AisMessageSequence {
-    talker: Talker,
-    id: Option<u8>,
-    channel: Option<AisChannel>,
-    bits: BitVec<u8, Msb0>,
-}
-
-impl AisMessageSequence {
-    pub fn new(talker: Talker, id: Option<u8>, channel: Option<AisChannel>, bits: BitVec<u8, Msb0>) -> Self {
-        AisMessageSequence { talker, id, channel, bits }
-    }
-    pub fn messages(&self) -> AisMessageIterator<'_> {
-        AisMessageIterator::new(self.talker, self.id, self.channel, &self.bits)
-    }
-}
-
-pub struct AisMessageIterator<'a> {
-    talker: Talker,
-    sequence_id: Option<u8>,
-    channel: Option<AisChannel>,
-    chunks: ChunksExact<'a, u8, Msb0>,
-    size: usize,
-    current: usize,
-}
-
-impl<'a> AisMessageIterator<'a> {
-    pub fn new(talker: Talker, sequence_id: Option<u8>, channel: Option<AisChannel>, bits: &'a BitVec<u8, Msb0>) -> Self {
-        let size = (bits.len() + (60 * 6 - 1)) / (60 * 6);
-        let chunks = bits.chunks_exact(60 * 6);
-        Self {
-            talker,
-            sequence_id,
-            channel,
-            chunks,
-            size,
-            current: 0,
-        }
-    }
-}
-
-impl<'a> Iterator for AisMessageIterator<'a> {
+impl Decoder for NmeaCodec {
     type Item = Message;
+    type Error = std::io::Error;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current == self.size {
-            return None;
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        while self.next < src.len() {
+            if src[self.next] == b'\n' {
+                let line = src.split_to(self.next + 1);
+                self.next = 0;
+                return parse(line);
+            }
+            self.next += 1;
         }
-        self.current += 1;
+        Ok(None)
+    }
+}
 
-        let sequence = Sequence {
-            total: self.size as u8,
-            item: self.current as u8,
-            id: self.sequence_id,
-        };
+fn hex(ch: u8) -> Result<u8, std::io::Error> {
+    Ok(match ch {
+        b'0'..=b'9' => ch - b'0',
+        b'A'..=b'F' => ch - b'A' + 10,
+        _ => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid hex character")),
+    })
+}
+/// Validates the line contains valid characters and a correct checksum, returning the content.
+fn validate(buf: &[u8]) -> Result<(char, &str), std::io::Error> {
+    if buf.is_empty() {
+        return Err(std::io::Error::new(ErrorKind::InvalidData, "Empty line"));
+    }
+    let kind = buf[0] as char;
 
-        let data = match self.chunks.next() {
-            Some(chunk) => chunk,
-            None => self.chunks.remainder(),
-        };
-        let ais_message = AisMessage::new(self.talker, sequence, self.channel, data);
-        let sentence = Sentence::VDM(ais_message);
-        Some(Message { tag_block: None, sentence })
+    let mut checksum: u8 = 0;
+    let mut pos = 1;
+    while pos < buf.len() - 3 {
+        let ch = buf[pos];
+        pos += 1;
+        match ch {
+            b'*' => {
+                let their_checksum = hex(buf[pos])? << 4 | hex(buf[pos + 1])?;
+                if checksum != their_checksum {
+                    return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid checksum"));
+                }
+                // SAFETY: we checked the buffer contains valid ASCII
+                return Ok((kind, unsafe { str::from_utf8_unchecked(&buf[1..pos - 1]) }));
+            }
+            0x20..=0x7f => checksum = checksum ^ ch,
+            _ => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid character")),
+        }
+    }
+    Err(std::io::Error::new(ErrorKind::InvalidData, "No checksum found"))
+}
+
+fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
+    let (kind, data) = validate(buf.as_ref())?;
+    let tag_block = if kind == '\\' { todo!() } else { None };
+
+    // Minimum is ttnnn
+    if data.len() < 5 {
+        return Err(std::io::Error::new(ErrorKind::InvalidData, "Sentence too short"));
+    }
+    let talker = Talker::try_from(&data[0..=1])?;
+    let sentence = match kind {
+        '$' => {
+            // Proprietary format: ttPnnn..
+            if data[2..].starts_with('P') {
+                if data.len() < 6 {
+                    return Err(std::io::Error::new(ErrorKind::InvalidData, "Proprietary sentence too short"));
+                }
+                let (mnemonic, data) = data[3..].split_at(3);
+                Sentence::Proprietary {
+                    talker,
+                    mnemonic: mnemonic.to_string(),
+                    data: data.to_string(),
+                }
+            } else if &data[4..=4] == "Q" {
+                // Query format: ttddQ,nnn
+                if data.len() != 9 {
+                    return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid query"));
+                }
+                let target = Talker::try_from(&data[2..=3])?;
+                let mnemonic = data[6..=8].to_string();
+                Sentence::Query { talker, target, mnemonic }
+            } else {
+                let mut fields = data[2..].split(',');
+                let mnemonic = fields.next().unwrap().to_string();
+                let fields = fields.map(|field| field.to_string()).collect();
+
+                match mnemonic {
+                    _ => Sentence::Parametric {
+                        talker,
+                        mnemonic: mnemonic.to_string(),
+                        fields,
+                    },
+                }
+            }
+        }
+        '!' => {
+            // Format: mnemonic,x1,x2,x3,c--c,x4
+            // Where:
+            // * x1: total number of sentences
+            // * x2: sentence number
+            // * x3: sequence id
+            // * x4: fill bits
+            // and c--c is the armored data preceded by optional application fields
+            let fields = data[2..].split(',').collect::<Vec<&str>>();
+            if fields.len() < 6 {
+                return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid encapsulation"));
+            }
+            let mnemonic = fields[0].to_string();
+            let x1 = fields[1];
+            let x2 = fields[2];
+            let x3 = fields[3];
+            let _armor = fields[fields.len() - 2]; // "the encapsulation data field shall always be the second to the last data field in the sentence"
+            let x4 = fields[fields.len() - 1];
+
+            // Extract the encapsulation header (x1, x2, x3)
+            let total = u8::from_str(x1).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid total"))?;
+            let sequence = u8::from_str(x2).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid sequence number"))?;
+            let sequence_id = {
+                if !x3.is_empty() {
+                    Some(u8::from_str(x3).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?)
+                } else {
+                    None
+                }
+            };
+
+            // Extract the armored data.
+            let _fill_bits = u8::from_str(x4).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?;
+            let bits = bitvec![u8, Msb0; 0, 1];
+
+            let fields = fields[4..fields.len() - 2].iter().map(|field| field.to_string()).collect();
+            match mnemonic {
+                _ => Sentence::Encapsulated {
+                    talker,
+                    mnemonic,
+                    total,
+                    sequence,
+                    sequence_id,
+                    fields,
+                    bits,
+                },
+            }
+        }
+        _ => {
+            return Err(std::io::Error::new(ErrorKind::InvalidData, "Unknown sentence type"));
+        }
+    };
+    Ok(Some(Message { tag_block, sentence }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn encoder() -> Result<(), std::io::Error> {
+        let mut codec = NmeaCodec::new();
+        let mut buf = BytesMut::with_capacity(1024);
+        codec.encode(
+            Message {
+                tag_block: None,
+                sentence: Sentence::Parametric {
+                    talker: Talker::GNSS,
+                    mnemonic: "RMC".to_string(),
+                    fields: vec![],
+                },
+            },
+            &mut buf,
+        )?;
+        assert_eq!(buf.as_ref(), b"$GNRMC*55\r\n");
+        Ok(())
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.size, Some(self.size))
+    #[test]
+    fn decoder() -> Result<(), std::io::Error> {
+        let mut codec = NmeaCodec::new();
+        let mut buf = BytesMut::with_capacity(1024);
+        assert!(codec.decode(&mut buf)?.is_none());
+
+        buf.put_slice(b"$GNxxx*71\r\n");
+        buf.put_slice(b"!AIyyy,1,1,1,ccc,0*3F\r\n");
+        buf.put_slice(b"$GPzzz");
+
+        // Decode the GNSS sentence.
+        let msg = codec.decode(&mut buf)?.unwrap();
+        assert!(msg.tag_block.is_none());
+        if let Sentence::Parametric { talker, mnemonic, fields } = msg.sentence {
+            assert_eq!(talker, Talker::GNSS);
+            assert_eq!(mnemonic, "xxx");
+            assert!(fields.is_empty())
+        } else {
+            panic!("Unexpected sentence");
+        }
+
+        // Decode the VDM sentence.
+        let msg = codec.decode(&mut buf)?.unwrap();
+        assert!(msg.tag_block.is_none());
+        if let Sentence::Encapsulated { talker, mnemonic, .. } = msg.sentence {
+            assert_eq!(talker, Talker::AIS);
+            assert_eq!(mnemonic, "yyy");
+        } else {
+            panic!("Unexpected sentence");
+        }
+
+        // Partial sentence should return None and the buffer should contain the remainder.
+        assert!(codec.decode(&mut buf)?.is_none());
+        assert_eq!(buf.as_ref(), b"$GPzzz");
+
+        // .. until \n is seen
+        buf.put_slice(b"*6D");
+        assert!(codec.decode(&mut buf)?.is_none());
+        buf.put_slice(b"\r\n");
+        assert!(codec.decode(&mut buf)?.is_some());
+        Ok(())
     }
 }

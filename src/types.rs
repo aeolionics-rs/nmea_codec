@@ -1,8 +1,9 @@
 use std::fmt::{Display, Formatter, Write};
+use std::io::ErrorKind;
 use uom::si::angle::degree;
 use uom::si::f64::{Angle, Velocity};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Talker {
     HeadingController,
     HeadingControllerMagnetic,
@@ -71,6 +72,22 @@ pub enum Talker {
     RadioClock,
     Weather,
     Other([u8; 2]),
+}
+
+impl TryFrom<&str> for Talker {
+    type Error = std::io::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match value {
+            "AI" => Talker::AIS,
+            "GN" => Talker::GNSS,
+            "GP" => Talker::GPS,
+            _ if value.len() == 2 => Self::Other([value.as_bytes()[0], value.as_bytes()[1]]),
+            _ => {
+                return Err(std::io::Error::new(ErrorKind::InvalidInput, "Invalid length"));
+            }
+        })
+    }
 }
 
 impl Display for Talker {
@@ -143,7 +160,7 @@ impl Display for Talker {
             Talker::Weather => "WI",
             Talker::Proprietary(val) => {
                 return write!(f, "P{}", str::from_utf8(val).map_err(|_| std::fmt::Error)?);
-            },
+            }
             Talker::Other(val) => str::from_utf8(val).map_err(|_| std::fmt::Error)?,
         };
         f.write_str(s)
@@ -240,14 +257,14 @@ impl Display for NavigationalStatus {
 pub enum AisChannel {
     A,
     B,
-    Other(char)
+    Other(char),
 }
 impl Display for AisChannel {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let ch = match self {
             AisChannel::A => 'A',
             AisChannel::B => 'B',
-            AisChannel::Other(ch) => *ch
+            AisChannel::Other(ch) => *ch,
         };
         f.write_char(ch)
     }

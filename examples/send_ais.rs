@@ -2,8 +2,9 @@ use ais_rs::Message::ScheduledPositionReport;
 use ais_rs::message::PositionReport;
 use ais_rs::types::*;
 use bytes::BytesMut;
+use nmea_codec::ais::IntoVDM;
 use nmea_codec::types::{AisChannel, Talker};
-use nmea_codec::{IntoVDM, NmeaCodec};
+use nmea_codec::NmeaCodec;
 use tokio_util::codec::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

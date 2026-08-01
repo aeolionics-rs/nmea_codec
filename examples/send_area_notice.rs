@@ -1,11 +1,12 @@
 use ais_rs::asm;
-use ais_rs::asm::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};
 use ais_rs::asm::Linkage;
+use ais_rs::asm::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};
 use ais_rs::message::BroadcastApplicationMessage;
-use ais_rs::types::{Minutes, MonthDayHourMinute, MMSI};
+use ais_rs::types::{MMSI, Minutes, MonthDayHourMinute};
 use bytes::BytesMut;
+use nmea_codec::ais::IntoVDM;
 use nmea_codec::types::{AisChannel, Talker};
-use nmea_codec::{IntoVDM, NmeaCodec};
+use nmea_codec::NmeaCodec;
 use tokio_util::codec::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
