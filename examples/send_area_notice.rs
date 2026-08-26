@@ -2,9 +2,9 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
-use ais_rs::asm;
-use ais_rs::asm::Linkage;
-use ais_rs::asm::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};
+use ais_rs::lin;
+use ais_rs::lin::Linkage;
+use ais_rs::lin::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};
 use ais_rs::message::BroadcastApplicationMessage;
 use ais_rs::types::{MMSI, Minutes, MonthDayHourMinute};
 use bytes::BytesMut;
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ais_msg = ais_rs::Message::BroadcastBinaryMessage(BroadcastApplicationMessage {
         repeat: Default::default(),
         source: MMSI::new(3669999)?,
-        message: asm::Broadcast::AreaNotice(notice)
+        message: lin::Broadcast::AreaNotice(notice)
     });
 
     let mut encoder = NmeaCodec::new();
