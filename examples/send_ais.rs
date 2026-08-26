@@ -2,9 +2,9 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
-use ais_rs::Message::ScheduledPositionReport;
-use ais_rs::message::PositionReport;
-use ais_rs::types::*;
+use ais_message::Message::ScheduledPositionReport;
+use ais_message::message::PositionReport;
+use ais_message::types::*;
 use bytes::BytesMut;
 use nmea_codec::ais::IntoVDM;
 use nmea_codec::types::{AisChannel, Talker};

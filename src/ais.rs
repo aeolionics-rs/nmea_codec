@@ -47,7 +47,7 @@ pub trait IntoVDM {
     fn into_vdm(self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> AisMessageSequence;
 }
 
-impl IntoVDM for ais_rs::Message {
+impl IntoVDM for ais_message::Message {
     fn into_vdm(self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> AisMessageSequence {
         let bits = self.to_bits().expect("");
         AisMessageSequence::new(talker, sequence, channel, bits)

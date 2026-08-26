@@ -2,15 +2,15 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
-use ais_rs::lin;
-use ais_rs::lin::Linkage;
-use ais_rs::lin::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};
-use ais_rs::message::BroadcastApplicationMessage;
-use ais_rs::types::{MMSI, Minutes, MonthDayHourMinute};
+use ais_asm::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};
+use ais_asm::{Broadcast, Linkage};
+use ais_message::message::BroadcastApplicationMessage;
+use ais_message::types::*;
+use ais_types::{Minutes, MonthDayHourMinute};
 use bytes::BytesMut;
+use nmea_codec::NmeaCodec;
 use nmea_codec::ais::IntoVDM;
 use nmea_codec::types::{AisChannel, Talker};
-use nmea_codec::NmeaCodec;
 use tokio_util::codec::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,10 +34,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
 
-    let ais_msg = ais_rs::Message::BroadcastBinaryMessage(BroadcastApplicationMessage {
+    let ais_msg = ais_message::Message::BroadcastBinaryMessage(BroadcastApplicationMessage {
         repeat: Default::default(),
         source: MMSI::new(3669999)?,
-        message: lin::Broadcast::AreaNotice(notice)
+        message: Broadcast::AreaNotice(notice)
     });
 
     let mut encoder = NmeaCodec::new();
