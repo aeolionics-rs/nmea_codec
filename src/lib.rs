@@ -55,6 +55,12 @@ pub struct Message {
 #[derive(Clone)]
 pub struct TagBlock {}
 
+impl TagBlock {
+    fn encode(&self, _buf: &mut BytesMut) -> Result<(), std::io::Error> {
+        todo!()
+    }
+}
+
 /// A NMEA 0183 sentence.
 #[derive(Clone)]
 pub enum Sentence {
@@ -145,16 +151,9 @@ impl Encoder<Message> for NmeaCodec {
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
         if let Some(tag_block) = item.tag_block {
-            self.encode(tag_block, dst)?;
+            tag_block.encode(dst)?;
         }
         self.encode(item.sentence, dst)?;
-        Ok(())
-    }
-}
-
-impl Encoder<TagBlock> for NmeaCodec {
-    type Error = std::io::Error;
-    fn encode(&mut self, _tag_block: TagBlock, _dst: &mut BytesMut) -> Result<(), Self::Error> {
         Ok(())
     }
 }
