@@ -19,7 +19,7 @@ pub mod ais;
 pub mod encapsulation;
 pub mod types;
 
-use crate::encapsulation::Sequence;
+use crate::encapsulation::{into_armored, Sequence};
 use ais::AisMessage;
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, Utc};
@@ -27,6 +27,7 @@ use tokio_util::codec::{Decoder, Encoder};
 use types::{CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
 use uom::si::angle::degree;
 use uom::si::velocity::knot;
+use crate::types::{AisChannel, MMSI};
 
 /// A [`Decoder`] and [`Encoder`] for NMEA 0183 messages.
 ///
@@ -90,6 +91,40 @@ pub enum Sentence {
         /// East is positive and subtracts from True course.
         /// West is negative and adds to True course.
         variation: Option<MagneticVariation>,
+    },
+    /// AIS Addressed Binary Message
+    ///
+    /// Typically sent to an AIS unit to initiate transmission of a AIS addressed binary message
+    /// (types 6, 12 and 25).
+    ABM{
+        /// The device sending the message.
+        talker: Talker,
+        /// Sequence information.
+        sequence: Sequence,
+        /// The MMSI of the destination AIS unit.
+        destination: MMSI,
+        /// The AIS channel used.
+        channel: Option<AisChannel>,
+        /// The AIS message type (6, 12, or 25).
+        message_id: u8,
+        /// The binary message chunk.
+        data: BitVec<u8, Msb0>,
+    },
+    /// AIS Broadcast Binary Message
+    ///
+    /// Typically sent to an AIS unit to initiate transmission of a AIS broadcast binary message
+    /// (types 8, 14 and 25).
+    BBM{
+        /// The device sending the message.
+        talker: Talker,
+        /// Sequence information.
+        sequence: Sequence,
+        /// The AIS channel used.
+        channel: Option<AisChannel>,
+        /// The AIS message type (6, 12, or 25).
+        message_id: u8,
+        /// The binary message chunk.
+        data: BitVec<u8, Msb0>,
     },
     VDM(AisMessage),
     VDO(AisMessage),
@@ -182,6 +217,22 @@ impl Encoder<Sentence> for NmeaCodec {
                 cog = format_option!(cog.as_ref().map(|v| v.0.get::<degree>()), "{:.0}", ""),
                 var = format_option!(variation, "{}", ","),
             ),
+            Sentence::ABM { talker, sequence, destination, channel, message_id, data, } => {
+                let (armored, padding) = into_armored(data.as_ref());
+                // SAFETY: the result only contains ASCII
+                let armor_text = str::from_utf8(armored.as_ref()).unwrap();
+                write!(dst, "!{talker}ABM,{sequence},{destination},{channel},{message_id},{armor_text},{padding}",
+                       channel = format_option!(channel, "{}", ",,"),
+                )
+            },
+            Sentence::BBM { talker, sequence, channel, message_id, data, } => {
+                let (armored, padding) = into_armored(data.as_ref());
+                // SAFETY: the result only contains ASCII
+                let armor_text = str::from_utf8(armored.as_ref()).unwrap();
+                write!(dst, "!{talker}BBM,{sequence},{channel},{message_id},{armor_text},{padding}",
+                       channel = format_option!(channel, "{}", ",,"),
+                )
+            },
             Sentence::VDO(msg) => msg.encode("VDO", dst),
             Sentence::VDM(msg) => msg.encode("VDM", dst),
             Sentence::Parametric { talker, mnemonic, fields } => {

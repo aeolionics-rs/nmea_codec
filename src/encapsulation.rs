@@ -9,7 +9,7 @@
 //! a single block of binary data, wrapped in ASCII armoring, with zero or more parametric fields.
 //!
 use crate::ais::AisMessage;
-use crate::types::AisChannel;
+use crate::types::{AisChannel, MMSI};
 use crate::{Message, NmeaCodec, Sentence, Talker};
 use bitvec::field::BitField;
 use bitvec::order::Msb0;
@@ -36,6 +36,22 @@ pub struct Encapsulation {
 
 /// Parametric fields associated with this encapsulated message.
 pub enum Fields {
+    /// An AIS addressed binary message.
+    ABM {
+        /// The MMSI of the destination AIS unit.
+        destination: MMSI,
+        /// The AIS channel used.
+        channel: Option<AisChannel>,
+        /// The AIS message type (6, 12, or 25).
+        message_id: u8,
+    },
+    /// An AIS broadcast binary message.
+    BBM {
+        /// The AIS channel used.
+        channel: Option<AisChannel>,
+        /// The AIS message type (8, 14, or 25).
+        message_id: u8,
+    },
     /// An AIS message received from another station.
     VDM {
         /// The AIS channel used.
@@ -100,6 +116,21 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
             self.number += 1;
 
             let sentence = match &self.outer.fields {
+                Fields::ABM { destination, channel, message_id } => Sentence::ABM {
+                    talker,
+                    sequence,
+                    destination: destination.clone(),
+                    channel: channel.clone(),
+                    message_id: message_id.clone(),
+                    data,
+                },
+                Fields::BBM { channel, message_id } => Sentence::BBM {
+                    talker,
+                    sequence,
+                    channel: channel.clone(),
+                    message_id: message_id.clone(),
+                    data,
+                },
                 Fields::VDM { channel } => Sentence::VDM(AisMessage {
                     talker,
                     sequence,

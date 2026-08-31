@@ -537,3 +537,18 @@ impl Display for AisChannel {
         f.write_char(ch)
     }
 }
+
+/// A Maritime Mobile Station Identifier.
+#[derive(Debug, Copy, Clone)]
+pub struct MMSI(pub u32);
+impl Display for MMSI {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<ais_message::types::MMSI> for MMSI {
+    fn from(mmsi: ais_message::types::MMSI) -> Self {
+        Self(mmsi.into())
+    }
+}
