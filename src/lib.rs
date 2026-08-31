@@ -19,6 +19,7 @@ pub mod ais;
 pub mod encapsulation;
 pub mod types;
 
+use crate::encapsulation::Sequence;
 use ais::AisMessage;
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, Utc};
@@ -117,16 +118,12 @@ pub enum Sentence {
         talker: Talker,
         /// The mnemonic code for the sentence formatter.
         mnemonic: String,
-        /// The number of messages in this sequence.
-        total: u8,
-        /// The number of this message in the sequence.
-        sequence: u8,
-        /// An optional identifier for a sequence of messages.
-        sequence_id: Option<u8>,
+        /// Sequence information.
+        sequence: Sequence,
         /// Additional data fields sent with the message.
         fields: Vec<String>,
         /// The binary data that was encapsulated.
-        bits: BitVec<u8, Msb0>,
+        data: BitVec<u8, Msb0>,
     },
     /// A query sentence requesting transmission of an approved sentence.
     Query {
@@ -187,12 +184,26 @@ impl Encoder<Sentence> for NmeaCodec {
             ),
             Sentence::VDO(msg) => msg.encode("VDO", dst),
             Sentence::VDM(msg) => msg.encode("VDM", dst),
-            Sentence::Parametric { talker, mnemonic, .. } => write!(dst, "${}{}", talker, mnemonic),
-            Sentence::Encapsulated { talker, mnemonic, .. } => write!(dst, "!{}{}", talker, mnemonic),
+            Sentence::Parametric { talker, mnemonic, fields } => {
+                write!(dst, "${}{}", talker, mnemonic).unwrap();
+                for field in fields {
+                    write!(dst, ",{}", field).unwrap();
+                }
+                Ok(())
+            }
+            Sentence::Encapsulated { talker, mnemonic, sequence, fields, data: bits } => {
+                let (armored, padding) = encapsulation::into_armored(bits.as_bitslice());
+                write!(dst, "!{talker}{mnemonic},{sequence}").unwrap();
+                for field in fields {
+                    write!(dst, ",{}", field).unwrap();
+                }
+                write!(dst, ",{armored},{padding}", armored = str::from_utf8(armored.as_ref()).unwrap()).unwrap();
+                Ok(())
+            }
             Sentence::Query { talker, target, mnemonic } => write!(dst, "${talker}{target}Q,{mnemonic}"),
             Sentence::Proprietary { mnemonic, data } => write!(dst, "$P{mnemonic}{data}"),
         }
-        .expect("Failed to encode sentence");
+        .unwrap();
         put_checksum(start + 1, dst);
         dst.put_slice(b"\r\n");
         Ok(())
@@ -320,30 +331,23 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
 
             // Extract the encapsulation header (x1, x2, x3)
             let total = u8::from_str(x1).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid total"))?;
-            let sequence = u8::from_str(x2).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid sequence number"))?;
-            let sequence_id = {
+            let number = u8::from_str(x2).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid sequence number"))?;
+            let id = {
                 if !x3.is_empty() {
                     Some(u8::from_str(x3).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?)
                 } else {
                     None
                 }
             };
+            let sequence = Sequence { total, number, id };
 
             // Extract the armored data.
             let _fill_bits = u8::from_str(x4).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?;
-            let bits = bitvec![u8, Msb0; 0, 1];
+            let bits = bitvec![u8, Msb0; 0, 1]; // todo
 
             let fields = fields[4..fields.len() - 2].iter().map(|field| field.to_string()).collect();
             match mnemonic {
-                _ => Sentence::Encapsulated {
-                    talker,
-                    mnemonic,
-                    total,
-                    sequence,
-                    sequence_id,
-                    fields,
-                    bits,
-                },
+                _ => Sentence::Encapsulated { talker, mnemonic, sequence, fields, data: bits },
             }
         }
         _ => {

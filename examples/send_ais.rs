@@ -6,15 +6,16 @@ use ais_message::Message::ScheduledPositionReport;
 use ais_message::message::PositionReport;
 use ais_message::types::*;
 use bytes::BytesMut;
-use nmea_codec::ais::IntoVDM;
-use nmea_codec::types::{AisChannel, Talker};
+use deku::DekuContainerWrite;
 use nmea_codec::NmeaCodec;
+use nmea_codec::encapsulation::Fields;
+use nmea_codec::types::{AisChannel, Talker};
 use tokio_util::codec::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ais_msg = ScheduledPositionReport(PositionReport {
         repeat: RepeatCount::Twice,
-        source: MMSI::new(127).unwrap(),
+        source: MMSI::new(127)?,
         status: NavigationalStatus::UnderWay,
         rate_of_turn: RateOfTurn(5),
         speed_over_ground: SpeedOverGround(0b1001100100),
@@ -31,11 +32,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             sub_message: 0b01_111001_000100,
         },
     });
+    let encapsulation = nmea_codec::encapsulation::Encapsulation {
+        talker: Talker::AIS,
+        sequence: None,
+        fields: Fields::VDM { channel: Some(AisChannel::A) },
+        bits: ais_msg.to_bits()?,
+    };
 
     let mut encoder = NmeaCodec::new();
     let mut buf = BytesMut::with_capacity(1024);
-    let msg = ais_msg.into_vdm(Talker::AIS, None, Some(AisChannel::A)).messages().next().unwrap();
-    encoder.encode(msg, &mut buf)?;
+    encoder.encode(encapsulation, &mut buf)?;
+    // println!("{}", str::from_utf8(buf.as_ref()).unwrap());
     assert_eq!(buf.as_ref(), b"!AIVDM,1,1,,A,1P000Oh1IT1svTP2r:43grwb05q4,0*71\r\n");
     Ok(())
 }
