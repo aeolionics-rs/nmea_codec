@@ -61,7 +61,7 @@ use show_option::prelude::*;
 use bitvec::bitvec;
 use bitvec::prelude::{BitVec, Msb0};
 use std::fmt::Write;
-use std::io::ErrorKind;
+use std::io::{Error, ErrorKind};
 use std::str::FromStr;
 
 pub mod encapsulation;
@@ -78,7 +78,7 @@ use ais::AisMessage;
 
 use crate::encapsulation::Sequence;
 use bytes::{BufMut, BytesMut};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use tokio_util::codec::{Decoder, Encoder};
 use types::{CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
 use uom::si::angle::degree;
@@ -166,7 +166,7 @@ impl TagBlock {
 }
 
 /// Well-known NMEA 0183 sentences.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Sentence {
     // Well-known parametric sentences.
     /// Recommended minimum specific GNSS data.
@@ -391,7 +391,7 @@ impl Encoder<Sentence> for NmeaCodec {
             Sentence::Query { talker, target, mnemonic } => write!(dst, "${talker}{target}Q,{mnemonic}"),
             Sentence::Proprietary { mnemonic, data } => write!(dst, "$P{mnemonic}{data}"),
         }
-            .unwrap();
+        .unwrap();
         put_checksum(start + 1, dst);
         dst.put_slice(b"\r\n");
         Ok(())
@@ -486,15 +486,18 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
                 Sentence::Query { talker, target, mnemonic }
             } else {
                 let mut fields = data[2..].split(',');
-                let mnemonic = fields.next().unwrap().to_string();
-                let fields = fields.map(|field| field.to_string()).collect();
+                let mnemonic = fields.next().unwrap();
 
                 match mnemonic {
-                    _ => Sentence::Parametric {
-                        talker,
-                        mnemonic: mnemonic.to_string(),
-                        fields,
-                    },
+                    "RMC" => parse_rmc(talker, fields.collect())?,
+                    _ => {
+                        let fields = fields.map(|field| field.to_string()).collect();
+                        Sentence::Parametric {
+                            talker,
+                            mnemonic: mnemonic.to_string(),
+                            fields,
+                        }
+                    }
                 }
             }
         }
@@ -518,11 +521,11 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
             let x4 = fields[fields.len() - 1];
 
             // Extract the encapsulation header (x1, x2, x3)
-            let total = u8::from_str(x1).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid total"))?;
-            let number = u8::from_str(x2).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid sequence number"))?;
+            let total = u8::from_str(x1).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid total"))?;
+            let number = u8::from_str(x2).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid sequence number"))?;
             let id = {
                 if !x3.is_empty() {
-                    Some(u8::from_str(x3).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?)
+                    Some(u8::from_str(x3).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?)
                 } else {
                     None
                 }
@@ -530,7 +533,7 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
             let sequence = Sequence { total, number, id };
 
             // Extract the armored data.
-            let _fill_bits = u8::from_str(x4).map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?;
+            let _fill_bits = u8::from_str(x4).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?;
             let bits = bitvec![u8, Msb0; 0, 1]; // todo
 
             let fields = fields[4..fields.len() - 2].iter().map(|field| field.to_string()).collect();
@@ -545,10 +548,52 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
             }
         }
         _ => {
-            return Err(std::io::Error::new(ErrorKind::InvalidData, "Unknown sentence type"));
+            return Err(Error::new(ErrorKind::InvalidData, "Unknown sentence type"));
         }
     };
     Ok(Some(Message { tag_block, sentence }))
+}
+
+fn parse_rmc(talker: Talker, fields: Vec<&str>) -> Result<Sentence, Error> {
+    if fields.len() < 12 {
+        return Err(Error::new(ErrorKind::InvalidData, "Insufficient fields in RMC"));
+    }
+    let time = fields[0];
+    let status = fields[1].try_into()?;
+    let latitude = fields[2];
+    let latitude_ord = fields[3];
+    let longitude = fields[4];
+    let longitude_ord = fields[5];
+    let sog = SpeedOverGround::parse_str(fields[6])?;
+    let cog = CourseOverGround::parse_str(fields[7])?;
+    let date = fields[8];
+    let variation = fields[9];
+    let variation_ord = fields[10];
+    let mode = fields[11].try_into()?;
+    // If NavigationalStatus is missing default to NotValid
+    let nav_status = if fields.len() > 12 { fields[12].try_into()? } else { NavigationalStatus::NotValid };
+
+    let time_of_fix = if date.is_empty() || time.is_empty() {
+        None
+    } else {
+        let date = NaiveDate::parse_from_str(date, "%d%m%y").map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid date"))?;
+        let time = NaiveTime::parse_from_str(time, "%H%M%S%.f").map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid time"))?;
+        Some(date.and_time(time).and_utc())
+    };
+    let position = Position::parse_str(latitude, latitude_ord, longitude, longitude_ord)?;
+    let variation = MagneticVariation::parse_str(variation, variation_ord)?;
+
+    Ok(Sentence::RMC {
+        talker,
+        status,
+        mode,
+        nav_status,
+        time_of_fix,
+        position,
+        sog,
+        cog,
+        variation,
+    })
 }
 
 #[cfg(test)]

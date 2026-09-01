@@ -14,7 +14,7 @@ use deku::DekuContainerWrite;
 use show_option::format_option;
 use std::fmt::Write;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AisMessage {
     pub talker: Talker,
     pub sequence: Sequence,

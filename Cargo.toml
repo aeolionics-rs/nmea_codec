@@ -28,8 +28,13 @@ deku = "0.20.3"
 
 [dev-dependencies]
 tokio = { version = "1.52.3", features = ["full"] }
+tokio-serial = "5.5.0"
 tracing-subscriber = "0.3.23"
 tracing = "0.1.44"
+
+[[example]]
+name = "serial"
+required-features = ["ais"]
 
 [[example]]
 name = "send_ais"

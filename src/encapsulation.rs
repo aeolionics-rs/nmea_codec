@@ -241,7 +241,7 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
 }
 
 /// The position of this sentence in the group needed to represent the binary message.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Sequence {
     /// The total number of sentences in this sequence.
     pub total: u8,

@@ -5,9 +5,11 @@
 //! Common data types used within messages.
 //!
 use std::fmt::{Display, Formatter, Write};
-use std::io::ErrorKind;
+use std::io::{Error, ErrorKind};
+use std::str::FromStr;
 use uom::si::angle::degree;
 use uom::si::f64::{Angle, Velocity};
+use uom::si::velocity::knot;
 
 /// An identifier for a device.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -435,9 +437,27 @@ impl Display for Talker {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Latitude(pub Angle);
 
+impl Latitude {
+    pub fn parse_str(latitude: &str, latitude_ord: &str) -> Result<Option<Latitude>, Error> {
+        if latitude.len() < 4 || latitude_ord.is_empty() {
+            return Ok(None);
+        }
+        let (degrees, minutes) = latitude.split_at(2);
+        let degrees = f64::from_str(degrees).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid degrees"))?;
+        let minutes = f64::from_str(minutes).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid minutes"))?;
+        let latitude = degrees + minutes / 60.0;
+        let latitude = match latitude_ord {
+            "N" => latitude,
+            "S" => -latitude,
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid ordinal")),
+        };
+        let latitude = Angle::new::<degree>(latitude);
+        Ok(Some(Latitude(latitude)))
+    }
+}
 impl Display for Latitude {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let degrees = self.0.get::<degree>().abs();
@@ -445,8 +465,26 @@ impl Display for Latitude {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Longitude(pub Angle);
+impl Longitude {
+    pub fn parse_str(longitude: &str, longitude_ord: &str) -> Result<Option<Longitude>, Error> {
+        if longitude.len() < 5 || longitude_ord.is_empty() {
+            return Ok(None);
+        }
+        let (degrees, minutes) = longitude.split_at(3);
+        let degrees = f64::from_str(degrees).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid degrees"))?;
+        let minutes = f64::from_str(minutes).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid minutes"))?;
+        let longitude = degrees + minutes / 60.0;
+        let longitude = match longitude_ord {
+            "E" => longitude,
+            "W" => -longitude,
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid ordinal")),
+        };
+        let longitude = Angle::new::<degree>(longitude);
+        Ok(Some(Longitude(longitude)))
+    }
+}
 
 impl Display for Longitude {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -455,21 +493,60 @@ impl Display for Longitude {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Position {
     pub latitude: Latitude,
     pub longitude: Longitude,
 }
+impl Position {
+    pub fn parse_str(latitude: &str, latitude_ord: &str, longitude: &str, longitude_ord: &str) -> Result<Option<Position>, Error> {
+        let Some(latitude) = Latitude::parse_str(latitude, latitude_ord)? else { return Ok(None) };
+        let Some(longitude) = Longitude::parse_str(longitude, longitude_ord)? else { return Ok(None) };
+        Ok(Some(Position { latitude, longitude }))
+    }
+}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SpeedOverGround(pub Velocity);
+impl SpeedOverGround {
+    pub fn parse_str(speed: &str) -> Result<Option<SpeedOverGround>, Error> {
+        if speed.is_empty() {
+            return Ok(None);
+        }
+        let sog = f64::from_str(speed).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid sog"))?;
+        Ok(Some(SpeedOverGround(Velocity::new::<knot>(sog))))
+    }
+}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CourseOverGround(pub Angle);
-
-#[derive(Clone)]
+impl CourseOverGround {
+    pub fn parse_str(cog: &str) -> Result<Option<CourseOverGround>, Error> {
+        if cog.is_empty() {
+            return Ok(None);
+        }
+        let cog = f64::from_str(cog).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid cog"))?;
+        Ok(Some(CourseOverGround(Angle::new::<degree>(cog))))
+    }
+}
+#[derive(Clone, Debug)]
 pub struct MagneticVariation(pub Angle);
+impl MagneticVariation {
+    pub fn parse_str(variation: &str, variation_ord: &str) -> Result<Option<MagneticVariation>, Error> {
+        if variation.len() < 5 || variation_ord.is_empty() {
+            return Ok(None);
+        }
+        let variation = f64::from_str(variation).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid degrees"))?;
+        let variation = match variation_ord {
+            "E" => variation,
+            "W" => -variation,
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid ordinal")),
+        };
+        let variation = Angle::new::<degree>(variation);
+        Ok(Some(MagneticVariation(variation)))
+    }
 
+}
 impl Display for MagneticVariation {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{},{}", self.0.get::<degree>().abs(), if self.0.is_sign_positive() { 'E' } else { 'W' })
@@ -485,6 +562,17 @@ pub enum PositioningSystemStatus {
 impl Display for PositioningSystemStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_char(*self as u8 as char)
+    }
+}
+impl TryFrom<&str> for PositioningSystemStatus {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match value {
+            "A" => PositioningSystemStatus::Valid,
+            "V" => PositioningSystemStatus::Warning,
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Unknown PositioningSystemStatus")),
+        })
     }
 }
 
@@ -506,6 +594,24 @@ impl Display for PositioningSystemMode {
         f.write_char(*self as u8 as char)
     }
 }
+impl TryFrom<&str> for PositioningSystemMode {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match value {
+            "N" => PositioningSystemMode::NoFix,
+            "A" => PositioningSystemMode::Autonomous,
+            "D" => PositioningSystemMode::Differential,
+            "E" => PositioningSystemMode::Estimated,
+            "M" => PositioningSystemMode::Manual,
+            "P" => PositioningSystemMode::Precise,
+            "R" => PositioningSystemMode::FixedRTK,
+            "F" => PositioningSystemMode::FloatRTK,
+            "S" => PositioningSystemMode::Simulator,
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Unknown PositioningSystemMode")),
+        })
+    }
+}
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -518,6 +624,19 @@ pub enum NavigationalStatus {
 impl Display for NavigationalStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_char(*self as u8 as char)
+    }
+}
+impl TryFrom<&str> for NavigationalStatus {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match value {
+            "S" => NavigationalStatus::Safe,
+            "C" => NavigationalStatus::Caution,
+            "U" => NavigationalStatus::Unsafe,
+            "V" => NavigationalStatus::NotValid,
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Unknown NavigationalStatus")),
+        })
     }
 }
 
