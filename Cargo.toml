@@ -2,13 +2,19 @@
 name = "nmea_codec"
 version = "0.1.0"
 edition = "2024"
+description = "A codec for NMEA 0183/IEC 61162-1 messages"
+license = "Apache-2.0"
+keywords = ["nmea", "iso61162", "ais"]
+categories = ["parser-implementations"]
+repository = "https://github.com/aeolionics-rs/nmea_codec.git"
+
 [features]
 ais = ["dep:ais_types", "dep:ais_asm", "dep:ais_message"]
 
 [dependencies]
-ais_types = { version="0.1.0", path = "../ais_rs/ais_types", optional = true }
-ais_asm = { version="0.1.0", path = "../ais_rs/ais_asm", optional = true }
-ais_message = { version="0.1.0", path = "../ais_rs/ais_message", optional = true }
+ais_types = { version="0.2.0", path = "../ais_rs/ais_types", optional = true }
+ais_asm = { version="0.2.0", path = "../ais_rs/ais_asm", optional = true }
+ais_message = { version="0.2.0", path = "../ais_rs/ais_message", optional = true }
 
 tokio-util = { version = "0.7.18", features = ["codec"] }
 futures = "0.3.32"
