@@ -2,11 +2,13 @@
 name = "nmea_codec"
 version = "0.1.0"
 edition = "2024"
+[features]
+ais = ["dep:ais_types", "dep:ais_asm", "dep:ais_message"]
 
 [dependencies]
-ais_types = { version="0.1.0", path = "../ais_rs/ais_types" }
-ais_asm = { version="0.1.0", path = "../ais_rs/ais_asm" }
-ais_message = { version="0.1.0", path = "../ais_rs/ais_message" }
+ais_types = { version="0.1.0", path = "../ais_rs/ais_types", optional = true }
+ais_asm = { version="0.1.0", path = "../ais_rs/ais_asm", optional = true }
+ais_message = { version="0.1.0", path = "../ais_rs/ais_message", optional = true }
 
 tokio-util = { version = "0.7.18", features = ["codec"] }
 futures = "0.3.32"
@@ -22,3 +24,11 @@ deku = "0.20.3"
 tokio = { version = "1.52.3", features = ["full"] }
 tracing-subscriber = "0.3.23"
 tracing = "0.1.44"
+
+[[example]]
+name = "send_ais"
+required-features = ["ais"]
+
+[[example]]
+name = "send_area_notice"
+required-features = ["ais"]

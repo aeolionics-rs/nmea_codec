@@ -2,13 +2,17 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
+//! Support for encapsulated sentences.
+//!
 //! Encapsulation is used to convey information when the data content is unknown or additional
 //! bandwidth is needed. AIS messages, for example, are conveyed as binary data with NMEA sentences.
 //!
 //! The data content is broken into a sequence of encapsulation sentences, each of which contains
 //! a single block of binary data, wrapped in ASCII armoring, with zero or more parametric fields.
 //!
+#[cfg(feature = "ais")]
 use crate::ais::AisMessage;
+#[cfg(feature = "ais")]
 use crate::types::{AisChannel, MMSI};
 use crate::{MAX_DATA, Message, NmeaCodec, Sentence, Talker};
 use bitvec::field::BitField;
@@ -41,6 +45,7 @@ const MAX_CHUNK: usize = MAX_DATA - ENCAPSULATION_OVERHEAD;
 /// Parametric fields associated with this encapsulated message.
 pub enum Fields {
     /// An AIS addressed binary message.
+    #[cfg(feature = "ais")]
     ABM {
         /// The MMSI of the destination AIS unit.
         destination: MMSI,
@@ -50,6 +55,7 @@ pub enum Fields {
         message_id: u8,
     },
     /// An AIS broadcast binary message.
+    #[cfg(feature = "ais")]
     BBM {
         /// The AIS channel used.
         channel: Option<AisChannel>,
@@ -57,12 +63,14 @@ pub enum Fields {
         message_id: u8,
     },
     /// An AIS message received from another station.
+    #[cfg(feature = "ais")]
     VDM {
         /// The AIS channel used.
         channel: Option<AisChannel>,
     },
 
     /// An AIS message sent by this station.
+    #[cfg(feature = "ais")]
     VDO {
         /// The AIS channel used.
         channel: Option<AisChannel>,
@@ -83,9 +91,13 @@ impl Encapsulation {
         // Calculate the number of characters needed for the parametric fields on the first and
         // subsequence sentences.
         let (first, others) = match &self.fields {
+            #[cfg(feature = "ais")]
             Fields::ABM { .. } => (14, 3),
+            #[cfg(feature = "ais")]
             Fields::BBM { .. } => (4, 2),
+            #[cfg(feature = "ais")]
             Fields::VDM { channel, .. } => (channel.map(|_| 2).unwrap_or(1), 1),
+            #[cfg(feature = "ais")]
             Fields::VDO { channel, .. } => (channel.map(|_| 2).unwrap_or(1), 1),
             Fields::Unknown { fields, .. } => {
                 let count = fields.len();
@@ -150,6 +162,7 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
             // For the first sentence, use the first bits and include the fields.
             let data = self.first.to_bitvec();
             match &self.outer.fields {
+                #[cfg(feature = "ais")]
                 Fields::ABM { destination, channel, message_id } => Sentence::ABM {
                     talker,
                     sequence,
@@ -159,6 +172,7 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
                     data,
                 },
 
+                #[cfg(feature = "ais")]
                 Fields::BBM { channel, message_id } => Sentence::BBM {
                     talker,
                     sequence,
@@ -166,12 +180,14 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
                     message_id: Some(message_id.clone()),
                     data,
                 },
+                #[cfg(feature = "ais")]
                 Fields::VDM { channel } => Sentence::VDM(AisMessage {
                     talker,
                     sequence,
                     channel: channel.clone(),
                     data,
                 }),
+                #[cfg(feature = "ais")]
                 Fields::VDO { channel } => Sentence::VDO(AisMessage {
                     talker,
                     sequence,
@@ -190,6 +206,7 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
             // For other sentences, get the next chunk of bits and omit the fields.
             let data = self.chunks.as_mut()?.next()?.to_bitvec();
             match &self.outer.fields {
+                #[cfg(feature = "ais")]
                 Fields::ABM { .. } => Sentence::ABM {
                     talker,
                     sequence,
@@ -198,6 +215,7 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
                     message_id: None,
                     data,
                 },
+                #[cfg(feature = "ais")]
                 Fields::BBM { .. } => Sentence::BBM {
                     talker,
                     sequence,
@@ -205,7 +223,9 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
                     message_id: None,
                     data,
                 },
+                #[cfg(feature = "ais")]
                 Fields::VDM { .. } => Sentence::VDM(AisMessage { talker, sequence, channel: None, data }),
+                #[cfg(feature = "ais")]
                 Fields::VDO { .. } => Sentence::VDO(AisMessage { talker, sequence, channel: None, data }),
                 Fields::Unknown { mnemonic, .. } => Sentence::Encapsulated {
                     talker,

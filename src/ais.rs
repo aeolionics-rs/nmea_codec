@@ -2,8 +2,8 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
-//! [`Sentence`] structures used for AIS communication.
-//!
+//! Support for AIS messages.
+//! 
 use crate::encapsulation::{Encapsulation, Fields, Sequence, into_armored};
 use crate::types::{AisChannel, Talker};
 use ais_message::message::{AddressedApplicationMessage, AddressedSafetyMessage, BroadcastApplicationMessage, BroadcastSafetyMessage};

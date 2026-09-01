@@ -5,7 +5,7 @@
 use bytes::BytesMut;
 use chrono::SubsecRound;
 use nmea_codec::types::{CourseOverGround, Latitude, Longitude, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
-use nmea_codec::{Message, NmeaCodec, Sentence};
+use nmea_codec::{NmeaCodec, Sentence};
 use tokio_util::codec::Encoder;
 use uom::si::angle::degree;
 use uom::si::f64::{Angle, Velocity};
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut encoder = NmeaCodec::new();
     let mut buf = BytesMut::with_capacity(1024);
-    encoder.encode(Message { tag_block: None, sentence }, &mut buf)?;
+    encoder.encode(sentence, &mut buf)?;
     print!("{}", String::from_utf8_lossy(buf.as_ref()));
     Ok(())
 }

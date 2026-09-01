@@ -547,6 +547,7 @@ impl Display for MMSI {
     }
 }
 
+#[cfg(feature = "ais")]
 impl From<ais_message::types::MMSI> for MMSI {
     fn from(mmsi: ais_message::types::MMSI) -> Self {
         Self(mmsi.into())

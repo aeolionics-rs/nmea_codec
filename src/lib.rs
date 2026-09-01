@@ -2,7 +2,56 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
-//! A codec for NMEA 1083 sentences.
+//! A codec for `NMEA 0183`/`IEC 61162-1` sentences,
+//! with support for tag blocks and encapsulated messages such as sentences used for `AIS`.
+//!
+//! The crate defines native message for well-known formats.
+//! Others are mapped to generic types enabling support for unrecognized messages.
+//! Messages are modeled in a Rust-native form, using the [`uom`] crate to improve type safety.
+//! Conversion to text is performed during encoding and decoding.
+//! The implementation also supports `Proprietary` and `Query` sentences.
+//!
+//! Encodes and decodes NMEA sentences to [`BytesMut`] buffers using the Tokio codec framework.
+//! The implementation does not require an async runtime but does require an allocator.
+//!
+//! The `ais` feature enables binding to type-safe messages; if this feature is not enabled then
+//! AIS messages are mapped to generic sentences.
+//!
+//! # Encoding
+//!
+//! ```rust
+//!     let mut encoder = NmeaCodec::new();
+//!     let mut buf = BytesMut::with_capacity(1024);
+//! ```
+//! ## Simple parametric sentence
+//! ```rust
+//!     let sentence = Sentence::RMC {
+//!         talker: Talker::GNSS,
+//!         time_of_fix: Some(chrono::Utc::now().trunc_subsecs(2)),
+//!         .. Default::default()
+//!     };
+//!     encoder.encode(sentence, &mut buf)?;
+//!
+//! ```
+//! ## Encapsulated sentence
+//! ```rust
+//!     let ais_msg = ScheduledPositionReport(PositionReport {
+//!         repeat: RepeatCount::Twice,
+//!         source: MMSI::new(127)?,
+//!         status: NavigationalStatus::UnderWay,
+//!         .. Default::default()
+//!     });
+//!     let encapsulation = Encapsulation {
+//!         talker: Talker::AIS,
+//!         sequence: None,
+//!         fields: Fields::VDM { channel: Some(AisChannel::A) },
+//!         bits: ais_msg.to_bits()?,
+//!     };
+//!     encoder.encode(encapsulation, &mut buf)?;
+//! ```
+//! If required, ehe encoder will split the encapsulated message into multiple sentences to fit
+//! within the [`MAX_SENTENCE`] limit.
+
 /// A [`Decoder`] and [`Encoder`] for NMEA 0183 messages.
 ///
 /// [`Decoder`]: Decoder
@@ -15,29 +64,75 @@ use std::fmt::Write;
 use std::io::ErrorKind;
 use std::str::FromStr;
 
-pub mod ais;
 pub mod encapsulation;
 pub mod types;
 
-use crate::encapsulation::{into_armored, Sequence};
+#[cfg(feature = "ais")]
+pub mod ais;
+#[cfg(feature = "ais")]
+use crate::encapsulation::into_armored;
+#[cfg(feature = "ais")]
+use crate::types::{AisChannel, MMSI};
+#[cfg(feature = "ais")]
 use ais::AisMessage;
+
+use crate::encapsulation::Sequence;
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, Utc};
 use tokio_util::codec::{Decoder, Encoder};
 use types::{CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
 use uom::si::angle::degree;
 use uom::si::velocity::knot;
-use crate::types::{AisChannel, MMSI};
 
-/// Maximum number of ASCII characters in a sentence, including the initial `$` or `!` and the
-/// terminating `<CR><LF>`.
+/// Maximum number of ASCII characters in a sentence, including the initial `$` or `!`
+/// and the terminating `<CR><LF>`.
 pub const MAX_SENTENCE: usize = 82;
 
 /// Maximum number of ASCII characters in the data fields, excluding the delimiters and checksum.
-pub const MAX_DATA: usize = MAX_SENTENCE - 3 - 3;
+pub const MAX_DATA: usize = MAX_SENTENCE - 1 - 3 - 2;
 
 /// A [`Decoder`] and [`Encoder`] for NMEA 0183 messages.
 ///
+/// # Decoding
+/// # Encoding
+/// ## Encoding a simple parametric sentence.
+/// ```rust
+///     let sentence = Sentence::RMC {
+///         talker: Talker::GNSS,
+///         time_of_fix: Some(chrono::Utc::now().trunc_subsecs(2)),
+///         .. Default::default()
+///     };
+///     encoder.encode(sentence, &mut buf)?;
+///
+/// ```
+/// ## Encoding a message with a tag block.
+/// ```rust
+///     let tag_block = None;
+///     let sentence = Sentence::RMC {
+///         talker: Talker::GNSS,
+///         time_of_fix: Some(chrono::Utc::now().trunc_subsecs(2)),
+///         .. Default::default()
+///     };
+///     encoder.encode(Message{tag_block, sentence}, &mut buf)?;
+///
+/// ```
+/// ## Encoding encapsulated data.
+/// ```rust
+///     let ais_msg = ScheduledPositionReport(PositionReport {
+///         repeat: RepeatCount::Twice,
+///         source: MMSI::new(127)?,
+///         status: NavigationalStatus::UnderWay,
+///         .. Default::default()
+///     });
+///     let encapsulation = Encapsulation {
+///         talker: Talker::AIS,
+///         sequence: None,
+///         fields: Fields::VDM { channel: Some(AisChannel::A) },
+///         bits: ais_msg.to_bits()?,
+///     };
+///     encoder.encode(encapsulation, &mut buf)?;
+/// ```
+
 /// [`Decoder`]: Decoder
 /// [`Encoder`]: Encoder
 pub struct NmeaCodec {
@@ -70,9 +165,10 @@ impl TagBlock {
     }
 }
 
-/// A NMEA 0183 sentence.
+/// Well-known NMEA 0183 sentences.
 #[derive(Clone)]
 pub enum Sentence {
+    // Well-known parametric sentences.
     /// Recommended minimum specific GNSS data.
     ///
     /// Time, date, position, course and speed provided by a GNSS navigation receiver.
@@ -99,11 +195,14 @@ pub enum Sentence {
         /// West is negative and adds to True course.
         variation: Option<MagneticVariation>,
     },
+
+    // Encapsulated formats.
     /// AIS Addressed Binary Message
     ///
     /// Typically sent to an AIS unit to initiate transmission of a AIS addressed binary message
     /// (types 6, 12 and 25).
-    ABM{
+    #[cfg(feature = "ais")]
+    ABM {
         /// The device sending the message.
         talker: Talker,
         /// Sequence information.
@@ -121,7 +220,8 @@ pub enum Sentence {
     ///
     /// Typically sent to an AIS unit to initiate transmission of a AIS broadcast binary message
     /// (types 8, 14 and 25).
-    BBM{
+    #[cfg(feature = "ais")]
+    BBM {
         /// The device sending the message.
         talker: Talker,
         /// Sequence information.
@@ -133,8 +233,14 @@ pub enum Sentence {
         /// The binary message chunk.
         data: BitVec<u8, Msb0>,
     },
+    /// An AIS message received by this AIS unit.
+    #[cfg(feature = "ais")]
     VDM(AisMessage),
+    /// An AIS message transmitted by this AIS unit.
+    #[cfg(feature = "ais")]
     VDO(AisMessage),
+
+    // Generic, catch-all variants.
     /// A general Parametric Sentence.
     ///
     /// This variant can be used to send arbitrary data. It is produced by the [`Decoder`] when
@@ -224,26 +330,41 @@ impl Encoder<Sentence> for NmeaCodec {
                 cog = format_option!(cog.as_ref().map(|v| v.0.get::<degree>()), "{:.0}", ""),
                 var = format_option!(variation, "{}", ","),
             ),
-            Sentence::ABM { talker, sequence, destination, channel, message_id, data, } => {
+            #[cfg(feature = "ais")]
+            Sentence::ABM {
+                talker,
+                sequence,
+                destination,
+                channel,
+                message_id,
+                data,
+            } => {
                 let (armored, padding) = into_armored(data.as_ref());
                 // SAFETY: the result only contains ASCII
                 let armor_text = str::from_utf8(armored.as_ref()).unwrap();
-                write!(dst, "!{talker}ABM,{sequence},{destination},{channel},{message_id},{armor_text},{padding}",
-                       destination = format_option!(destination, "{}", ",,"),
-                       message_id = format_option!(message_id, "{}", ",,"),
-                       channel = format_option!(channel, "{}", ",,"),
+                write!(
+                    dst,
+                    "!{talker}ABM,{sequence},{destination},{channel},{message_id},{armor_text},{padding}",
+                    destination = format_option!(destination, "{}", ",,"),
+                    message_id = format_option!(message_id, "{}", ",,"),
+                    channel = format_option!(channel, "{}", ",,"),
                 )
-            },
-            Sentence::BBM { talker, sequence, channel, message_id, data, } => {
+            }
+            #[cfg(feature = "ais")]
+            Sentence::BBM { talker, sequence, channel, message_id, data } => {
                 let (armored, padding) = into_armored(data.as_ref());
                 // SAFETY: the result only contains ASCII
                 let armor_text = str::from_utf8(armored.as_ref()).unwrap();
-                write!(dst, "!{talker}BBM,{sequence},{channel},{message_id},{armor_text},{padding}",
-                       message_id = format_option!(message_id, "{}", ",,"),
-                       channel = format_option!(channel, "{}", ",,"),
+                write!(
+                    dst,
+                    "!{talker}BBM,{sequence},{channel},{message_id},{armor_text},{padding}",
+                    message_id = format_option!(message_id, "{}", ",,"),
+                    channel = format_option!(channel, "{}", ",,"),
                 )
-            },
+            }
+            #[cfg(feature = "ais")]
             Sentence::VDO(msg) => msg.encode("VDO", dst),
+            #[cfg(feature = "ais")]
             Sentence::VDM(msg) => msg.encode("VDM", dst),
             Sentence::Parametric { talker, mnemonic, fields } => {
                 write!(dst, "${}{}", talker, mnemonic).unwrap();
@@ -252,7 +373,13 @@ impl Encoder<Sentence> for NmeaCodec {
                 }
                 Ok(())
             }
-            Sentence::Encapsulated { talker, mnemonic, sequence, fields, data: bits } => {
+            Sentence::Encapsulated {
+                talker,
+                mnemonic,
+                sequence,
+                fields,
+                data: bits,
+            } => {
                 let (armored, padding) = encapsulation::into_armored(bits.as_bitslice());
                 write!(dst, "!{talker}{mnemonic},{sequence}").unwrap();
                 for field in fields {
@@ -264,7 +391,7 @@ impl Encoder<Sentence> for NmeaCodec {
             Sentence::Query { talker, target, mnemonic } => write!(dst, "${talker}{target}Q,{mnemonic}"),
             Sentence::Proprietary { mnemonic, data } => write!(dst, "$P{mnemonic}{data}"),
         }
-        .unwrap();
+            .unwrap();
         put_checksum(start + 1, dst);
         dst.put_slice(b"\r\n");
         Ok(())
@@ -408,7 +535,13 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
 
             let fields = fields[4..fields.len() - 2].iter().map(|field| field.to_string()).collect();
             match mnemonic {
-                _ => Sentence::Encapsulated { talker, mnemonic, sequence, fields, data: bits },
+                _ => Sentence::Encapsulated {
+                    talker,
+                    mnemonic,
+                    sequence,
+                    fields,
+                    data: bits,
+                },
             }
         }
         _ => {
