@@ -10,7 +10,7 @@
 //!
 use crate::ais::AisMessage;
 use crate::types::{AisChannel, MMSI};
-use crate::{Message, NmeaCodec, Sentence, Talker};
+use crate::{MAX_DATA, Message, NmeaCodec, Sentence, Talker};
 use bitvec::field::BitField;
 use bitvec::order::Msb0;
 use bitvec::prelude::{BitSlice, BitVec};
@@ -33,6 +33,10 @@ pub struct Encapsulation {
     /// The binary data that was encapsulated.
     pub bits: BitVec<u8, Msb0>,
 }
+
+// ttccc,x,x,x,..,x
+const ENCAPSULATION_OVERHEAD: usize = 5 + 2 + 2 + 2 + 1 + 2;
+const MAX_CHUNK: usize = MAX_DATA - ENCAPSULATION_OVERHEAD;
 
 /// Parametric fields associated with this encapsulated message.
 pub enum Fields {
@@ -76,10 +80,32 @@ pub enum Fields {
 impl Encapsulation {
     /// Returns an iterator over the individual encapsulated sentences for this message.
     pub fn messages(&self) -> impl Iterator<Item = Message> {
-        let inner = self.bits.chunks(360);
-        let (_, max) = inner.size_hint();
-        let total = max.unwrap() as u8;
-        EncapsulationIterator { outer: &self, total, number: 1, inner }
+        // Calculate the number of characters needed for the parametric fields on the first and
+        // subsequence sentences.
+        let (first, others) = match &self.fields {
+            Fields::ABM { .. } => (14, 3),
+            Fields::BBM { .. } => (4, 2),
+            Fields::VDM { channel, .. } => (channel.map(|_| 2).unwrap_or(1), 1),
+            Fields::VDO { channel, .. } => (channel.map(|_| 2).unwrap_or(1), 1),
+            Fields::Unknown { fields, .. } => {
+                let count = fields.len();
+                let field_data = fields.iter().fold(0, |acc, f| acc + f.len());
+                (count + field_data, count)
+            }
+        };
+        let first_size = (MAX_CHUNK - first) * 6;
+        let chunk_size = (MAX_CHUNK - others) * 6;
+        let (first, chunks, total) = if self.bits.len() <= first_size {
+            // Everything will fit in a single sentence.
+            (self.bits.as_bitslice(), None, 1)
+        } else {
+            let (first, rest) = self.bits.split_at(first_size);
+            let chunks = rest.chunks(chunk_size);
+            let (_, max) = chunks.size_hint();
+            let total = 1 + max.unwrap() as u8;
+            (first, Some(chunks), total)
+        };
+        EncapsulationIterator { outer: &self, number: 1, first, chunks, total }
     }
 }
 
@@ -98,37 +124,46 @@ pub struct EncapsulationIterator<'a> {
     outer: &'a Encapsulation,
     total: u8,
     number: u8,
-    inner: Chunks<'a, u8, Msb0>,
+    first: &'a BitSlice<u8, Msb0>,
+    chunks: Option<Chunks<'a, u8, Msb0>>,
 }
 
 impl<'a> Iterator for EncapsulationIterator<'a> {
     type Item = Message;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(chunk) = self.inner.next() {
-            let data = chunk.to_bitvec();
-            let talker = self.outer.talker.clone();
-            let sequence = Sequence {
-                total: self.total,
-                number: self.number,
-                id: self.outer.sequence.clone(),
-            };
-            self.number += 1;
+        let number = self.number;
+        let total = self.total;
+        if number > total {
+            return None;
+        }
+        self.number = number + 1;
 
-            let sentence = match &self.outer.fields {
+        let talker = self.outer.talker.clone();
+        let sequence = Sequence {
+            total,
+            number,
+            id: self.outer.sequence.clone(),
+        };
+
+        let sentence = if number == 1 {
+            // For the first sentence, use the first bits and include the fields.
+            let data = self.first.to_bitvec();
+            match &self.outer.fields {
                 Fields::ABM { destination, channel, message_id } => Sentence::ABM {
                     talker,
                     sequence,
-                    destination: destination.clone(),
+                    destination: Some(destination.clone()),
                     channel: channel.clone(),
-                    message_id: message_id.clone(),
+                    message_id: Some(message_id.clone()),
                     data,
                 },
+
                 Fields::BBM { channel, message_id } => Sentence::BBM {
                     talker,
                     sequence,
                     channel: channel.clone(),
-                    message_id: message_id.clone(),
+                    message_id: Some(message_id.clone()),
                     data,
                 },
                 Fields::VDM { channel } => Sentence::VDM(AisMessage {
@@ -150,11 +185,38 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
                     fields: fields.clone(),
                     data,
                 },
-            };
-            Some(Message { tag_block: None, sentence })
+            }
         } else {
-            None
-        }
+            // For other sentences, get the next chunk of bits and omit the fields.
+            let data = self.chunks.as_mut()?.next()?.to_bitvec();
+            match &self.outer.fields {
+                Fields::ABM { .. } => Sentence::ABM {
+                    talker,
+                    sequence,
+                    destination: None,
+                    channel: None,
+                    message_id: None,
+                    data,
+                },
+                Fields::BBM { .. } => Sentence::BBM {
+                    talker,
+                    sequence,
+                    channel: None,
+                    message_id: None,
+                    data,
+                },
+                Fields::VDM { .. } => Sentence::VDM(AisMessage { talker, sequence, channel: None, data }),
+                Fields::VDO { .. } => Sentence::VDO(AisMessage { talker, sequence, channel: None, data }),
+                Fields::Unknown { mnemonic, .. } => Sentence::Encapsulated {
+                    talker,
+                    mnemonic: mnemonic.clone(),
+                    sequence,
+                    fields: vec![],
+                    data,
+                },
+            }
+        };
+        Some(Message { tag_block: None, sentence })
     }
 }
 

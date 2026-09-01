@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         retransmitted: false,
         message: Addressed::AreaNotice(notice),
     };
-    let encapsulation = ais_msg.to_abm(Talker::ECDIS, None, Some(AisChannel::A));
+    let encapsulation = ais_msg.to_abm(Talker::ECDIS, Some(0), Some(AisChannel::A));
 
     buf.clear();
     encoder.encode(encapsulation, &mut buf)?;

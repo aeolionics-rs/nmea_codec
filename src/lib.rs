@@ -29,6 +29,13 @@ use uom::si::angle::degree;
 use uom::si::velocity::knot;
 use crate::types::{AisChannel, MMSI};
 
+/// Maximum number of ASCII characters in a sentence, including the initial `$` or `!` and the
+/// terminating `<CR><LF>`.
+pub const MAX_SENTENCE: usize = 82;
+
+/// Maximum number of ASCII characters in the data fields, excluding the delimiters and checksum.
+pub const MAX_DATA: usize = MAX_SENTENCE - 3 - 3;
+
 /// A [`Decoder`] and [`Encoder`] for NMEA 0183 messages.
 ///
 /// [`Decoder`]: Decoder
@@ -102,11 +109,11 @@ pub enum Sentence {
         /// Sequence information.
         sequence: Sequence,
         /// The MMSI of the destination AIS unit.
-        destination: MMSI,
+        destination: Option<MMSI>,
         /// The AIS channel used.
         channel: Option<AisChannel>,
         /// The AIS message type (6, 12, or 25).
-        message_id: u8,
+        message_id: Option<u8>,
         /// The binary message chunk.
         data: BitVec<u8, Msb0>,
     },
@@ -122,7 +129,7 @@ pub enum Sentence {
         /// The AIS channel used.
         channel: Option<AisChannel>,
         /// The AIS message type (6, 12, or 25).
-        message_id: u8,
+        message_id: Option<u8>,
         /// The binary message chunk.
         data: BitVec<u8, Msb0>,
     },
@@ -222,6 +229,8 @@ impl Encoder<Sentence> for NmeaCodec {
                 // SAFETY: the result only contains ASCII
                 let armor_text = str::from_utf8(armored.as_ref()).unwrap();
                 write!(dst, "!{talker}ABM,{sequence},{destination},{channel},{message_id},{armor_text},{padding}",
+                       destination = format_option!(destination, "{}", ",,"),
+                       message_id = format_option!(message_id, "{}", ",,"),
                        channel = format_option!(channel, "{}", ",,"),
                 )
             },
@@ -230,6 +239,7 @@ impl Encoder<Sentence> for NmeaCodec {
                 // SAFETY: the result only contains ASCII
                 let armor_text = str::from_utf8(armored.as_ref()).unwrap();
                 write!(dst, "!{talker}BBM,{sequence},{channel},{message_id},{armor_text},{padding}",
+                       message_id = format_option!(message_id, "{}", ",,"),
                        channel = format_option!(channel, "{}", ",,"),
                 )
             },
