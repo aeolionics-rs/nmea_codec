@@ -326,7 +326,7 @@ impl Encoder<Sentence> for NmeaCodec {
                 time = format_option!(time_of_fix.map(|time| { time.format("%H%M%S%.f") }), "{}", ""),
                 lat = format_option!(position.as_ref().map(|v| &v.latitude), "{}", ","),
                 long = format_option!(position.as_ref().map(|v| &v.longitude), "{}", ","),
-                sog = format_option!(sog.as_ref().map(|v| v.0.get::<knot>()), "{}", ""),
+                sog = format_option!(sog.as_ref().map(|v| v.0.get::<knot>()), "{:.2}", ""),
                 cog = format_option!(cog.as_ref().map(|v| v.0.get::<degree>()), "{:.0}", ""),
                 var = format_option!(variation, "{}", ","),
             ),
