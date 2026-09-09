@@ -25,12 +25,12 @@ show-option = "0.2.0"
 lazy_format = "2.0.3"
 bitvec = "1"
 deku = "0.20.3"
+tracing = "0.1.44"
 
 [dev-dependencies]
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-serial = "5.5.0"
 tracing-subscriber = "0.3.23"
-tracing = "0.1.44"
 
 [[example]]
 name = "serial"

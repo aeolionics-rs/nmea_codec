@@ -80,6 +80,7 @@ use crate::encapsulation::Sequence;
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use tokio_util::codec::{Decoder, Encoder};
+use tracing::trace;
 use types::{CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
 use uom::si::angle::degree;
 use uom::si::velocity::knot;
@@ -160,7 +161,7 @@ pub struct Message {
 pub struct TagBlock {}
 
 impl TagBlock {
-    fn encode(&self, _buf: &mut BytesMut) -> Result<(), std::io::Error> {
+    fn encode(&self, _buf: &mut BytesMut) -> Result<(), Error> {
         todo!()
     }
 }
@@ -292,7 +293,7 @@ pub enum Sentence {
 }
 
 impl Encoder<Message> for NmeaCodec {
-    type Error = std::io::Error;
+    type Error = Error;
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
         if let Some(tag_block) = item.tag_block {
@@ -304,7 +305,7 @@ impl Encoder<Message> for NmeaCodec {
 }
 
 impl Encoder<Sentence> for NmeaCodec {
-    type Error = std::io::Error;
+    type Error = Error;
 
     fn encode(&mut self, item: Sentence, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let start = dst.len();
@@ -405,12 +406,13 @@ fn put_checksum(start: usize, dst: &mut BytesMut) {
 
 impl Decoder for NmeaCodec {
     type Item = Message;
-    type Error = std::io::Error;
+    type Error = Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         while self.next < src.len() {
             if src[self.next] == b'\n' {
                 let line = src.split_to(self.next + 1);
+                trace!("decoding: {}", str::from_utf8(line.as_ref()).unwrap().trim());
                 self.next = 0;
                 return parse(line);
             }
@@ -420,48 +422,48 @@ impl Decoder for NmeaCodec {
     }
 }
 
-fn hex(ch: u8) -> Result<u8, std::io::Error> {
+fn hex(ch: u8) -> Result<u8, Error> {
     Ok(match ch {
         b'0'..=b'9' => ch - b'0',
         b'A'..=b'F' => ch - b'A' + 10,
-        _ => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid hex character")),
+        _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid hex character")),
     })
 }
 /// Validates the line contains valid characters and a correct checksum, returning the content.
-fn validate(buf: &[u8]) -> Result<(char, &str), std::io::Error> {
+fn validate(buf: &[u8]) -> Result<(char, &str), Error> {
     if buf.is_empty() {
-        return Err(std::io::Error::new(ErrorKind::InvalidData, "Empty line"));
+        return Err(Error::new(ErrorKind::InvalidData, "Empty line"));
     }
     let kind = buf[0] as char;
 
     let mut checksum: u8 = 0;
     let mut pos = 1;
-    while pos < buf.len() - 3 {
+    while pos + 3 < buf.len() {
         let ch = buf[pos];
         pos += 1;
         match ch {
             b'*' => {
                 let their_checksum = hex(buf[pos])? << 4 | hex(buf[pos + 1])?;
                 if checksum != their_checksum {
-                    return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid checksum"));
+                    return Err(Error::new(ErrorKind::InvalidData, "Invalid checksum"));
                 }
                 // SAFETY: we checked the buffer contains valid ASCII
                 return Ok((kind, unsafe { str::from_utf8_unchecked(&buf[1..pos - 1]) }));
             }
             0x20..=0x7f => checksum = checksum ^ ch,
-            _ => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid character")),
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid character")),
         }
     }
-    Err(std::io::Error::new(ErrorKind::InvalidData, "No checksum found"))
+    Err(Error::new(ErrorKind::InvalidData, "No checksum found"))
 }
 
-fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
+fn parse(buf: BytesMut) -> Result<Option<Message>, Error> {
     let (kind, data) = validate(buf.as_ref())?;
     let tag_block = if kind == '\\' { todo!() } else { None };
 
     // Minimum is ttnnn
     if data.len() < 5 {
-        return Err(std::io::Error::new(ErrorKind::InvalidData, "Sentence too short"));
+        return Err(Error::new(ErrorKind::InvalidData, "Sentence too short"));
     }
     let talker = Talker::try_from(&data[0..=1])?;
     let sentence = match kind {
@@ -469,7 +471,7 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
             // Proprietary format: Pnnn..
             if data.starts_with('P') {
                 if data.len() < 4 {
-                    return Err(std::io::Error::new(ErrorKind::InvalidData, "Proprietary sentence too short"));
+                    return Err(Error::new(ErrorKind::InvalidData, "Proprietary sentence too short"));
                 }
                 let (mnemonic, data) = data[1..].split_at(3);
                 Sentence::Proprietary {
@@ -479,7 +481,7 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
             } else if &data[4..=4] == "Q" {
                 // Query format: ttddQ,nnn
                 if data.len() != 9 {
-                    return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid query"));
+                    return Err(Error::new(ErrorKind::InvalidData, "Invalid query"));
                 }
                 let target = Talker::try_from(&data[2..=3])?;
                 let mnemonic = data[6..=8].to_string();
@@ -511,7 +513,7 @@ fn parse(buf: BytesMut) -> Result<Option<Message>, std::io::Error> {
             // and c--c is the armored data preceded by optional application fields
             let fields = data[2..].split(',').collect::<Vec<&str>>();
             if fields.len() < 6 {
-                return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid encapsulation"));
+                return Err(Error::new(ErrorKind::InvalidData, "Invalid encapsulation"));
             }
             let mnemonic = fields[0].to_string();
             let x1 = fields[1];
@@ -600,7 +602,7 @@ fn parse_rmc(talker: Talker, fields: Vec<&str>) -> Result<Sentence, Error> {
 mod tests {
     use super::*;
     #[test]
-    fn encoder() -> Result<(), std::io::Error> {
+    fn encoder() -> Result<(), Error> {
         let mut codec = NmeaCodec::new();
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(
@@ -619,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn decoder() -> Result<(), std::io::Error> {
+    fn decoder() -> Result<(), Error> {
         let mut codec = NmeaCodec::new();
         let mut buf = BytesMut::with_capacity(1024);
         assert!(codec.decode(&mut buf)?.is_none());
@@ -662,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn proprietary() -> Result<(), std::io::Error> {
+    fn proprietary() -> Result<(), Error> {
         let mut codec = NmeaCodec::new();
         let mut buf = BytesMut::from("$Pxxxabc*48\r\n");
         let msg = codec.decode(&mut buf)?.unwrap();
