@@ -12,7 +12,7 @@ use uom::si::f64::{Angle, Velocity};
 use uom::si::velocity::knot;
 
 /// An identifier for a device.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Talker {
     /// AB: Independent AIS Base Station
     IndependentAisBaseStation,
@@ -459,10 +459,21 @@ impl Latitude {
     }
 }
 impl Display for Latitude {
+    /// The latitude as `ddmm.mmmm,N` or `S`.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let degrees = self.0.get::<degree>().abs();
-        write!(f, "{:02}{:7.04},{}", degrees.trunc(), degrees.fract() * 60.0, if self.0.is_sign_positive() { 'N' } else { 'S' })
+        write_degrees_minutes(f, &self.0, 2, 'N', 'S')
     }
+}
+
+/// Writes an angle as whole degrees with `width` digits and minutes to 1/10_000, then the
+/// hemisphere: `positive` for north or east and `negative` for south or west.
+fn write_degrees_minutes(f: &mut Formatter<'_>, angle: &Angle, width: usize, positive: char, negative: char) -> std::fmt::Result {
+    let degrees = angle.get::<degree>();
+    // Round to the precision written before splitting, so the minutes never round up to 60.
+    let units = (degrees.abs() * 60.0 * 10_000.0).round() as u64;
+    let (whole, minutes) = (units / 600_000, units % 600_000);
+    let hemisphere = if degrees >= 0.0 || units == 0 { positive } else { negative };
+    write!(f, "{whole:0width$}{:02}.{:04},{hemisphere}", minutes / 10_000, minutes % 10_000)
 }
 
 #[derive(Clone, Debug)]
@@ -487,9 +498,9 @@ impl Longitude {
 }
 
 impl Display for Longitude {
+    /// The longitude as `dddmm.mmmm,E` or `W`.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let degrees = self.0.get::<degree>().abs();
-        write!(f, "{:02}{:7.04},{}", degrees.trunc(), degrees.fract() * 60.0, if self.0.is_sign_positive() { 'E' } else { 'W' })
+        write_degrees_minutes(f, &self.0, 3, 'E', 'W')
     }
 }
 
@@ -529,11 +540,18 @@ impl CourseOverGround {
         Ok(Some(CourseOverGround(Angle::new::<degree>(cog))))
     }
 }
+impl Display for CourseOverGround {
+    /// The course in degrees true to a tenth of a degree, from 0.0 to 359.9.
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let tenths = (self.0.get::<degree>() * 10.0).round().rem_euclid(3600.0) as u32;
+        write!(f, "{}.{}", tenths / 10, tenths % 10)
+    }
+}
 #[derive(Clone, Debug)]
 pub struct MagneticVariation(pub Angle);
 impl MagneticVariation {
     pub fn parse_str(variation: &str, variation_ord: &str) -> Result<Option<MagneticVariation>, Error> {
-        if variation.len() < 5 || variation_ord.is_empty() {
+        if variation.is_empty() || variation_ord.is_empty() {
             return Ok(None);
         }
         let variation = f64::from_str(variation).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid degrees"))?;
@@ -548,8 +566,13 @@ impl MagneticVariation {
 
 }
 impl Display for MagneticVariation {
+    /// The variation to a tenth of a degree, then `E` or `W`.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{},{}", self.0.get::<degree>().abs(), if self.0.is_sign_positive() { 'E' } else { 'W' })
+        let degrees = self.0.get::<degree>();
+        // Round before choosing the direction, so a variation that rounds to zero is not west.
+        let tenths = (degrees.abs() * 10.0).round() as u64;
+        let direction = if degrees >= 0.0 || tenths == 0 { 'E' } else { 'W' };
+        write!(f, "{}.{},{direction}", tenths / 10, tenths % 10)
     }
 }
 
@@ -640,11 +663,24 @@ impl TryFrom<&str> for NavigationalStatus {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AisChannel {
     A,
     B,
     Other(char),
+}
+impl TryFrom<&str> for AisChannel {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let mut chars = value.chars();
+        Ok(match (chars.next(), chars.next()) {
+            (Some('A'), None) => AisChannel::A,
+            (Some('B'), None) => AisChannel::B,
+            (Some(ch), None) => AisChannel::Other(ch),
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid AisChannel")),
+        })
+    }
 }
 impl Display for AisChannel {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -652,6 +688,43 @@ impl Display for AisChannel {
             AisChannel::A => 'A',
             AisChannel::B => 'B',
             AisChannel::Other(ch) => *ch,
+        };
+        f.write_char(ch)
+    }
+}
+
+/// The AIS channel an ABM or BBM message is to be transmitted on, sent as a number from 0 to 3.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TransmitChannel {
+    /// No preference (0).
+    NoPreference,
+    /// Channel A (1).
+    A,
+    /// Channel B (2).
+    B,
+    /// Both channels A and B (3).
+    Both,
+}
+impl TryFrom<&str> for TransmitChannel {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match value {
+            "0" => TransmitChannel::NoPreference,
+            "1" => TransmitChannel::A,
+            "2" => TransmitChannel::B,
+            "3" => TransmitChannel::Both,
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid TransmitChannel")),
+        })
+    }
+}
+impl Display for TransmitChannel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let ch = match self {
+            TransmitChannel::NoPreference => '0',
+            TransmitChannel::A => '1',
+            TransmitChannel::B => '2',
+            TransmitChannel::Both => '3',
         };
         f.write_char(ch)
     }

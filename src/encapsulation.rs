@@ -13,7 +13,7 @@
 #[cfg(feature = "ais")]
 use crate::ais::AisMessage;
 #[cfg(feature = "ais")]
-use crate::types::{AisChannel, MMSI};
+use crate::types::{AisChannel, MMSI, TransmitChannel};
 use crate::{MAX_DATA, Message, NmeaCodec, Sentence, Talker};
 use bitvec::field::BitField;
 use bitvec::order::Msb0;
@@ -22,6 +22,7 @@ use bitvec::slice::Chunks;
 use bytes::{BufMut, Bytes, BytesMut};
 use show_option::format_option;
 use std::fmt::{Display, Formatter};
+use std::io::{Error, ErrorKind};
 use tokio_util::codec::Encoder;
 
 /// The encapsulation of a entire binary data message.
@@ -49,16 +50,16 @@ pub enum Fields {
     ABM {
         /// The MMSI of the destination AIS unit.
         destination: MMSI,
-        /// The AIS channel used.
-        channel: Option<AisChannel>,
+        /// The AIS channel to transmit on: 0 for no preference, 1 for A, 2 for B or 3 for both.
+        channel: Option<TransmitChannel>,
         /// The AIS message type (6, 12, or 25).
         message_id: u8,
     },
     /// An AIS broadcast binary message.
     #[cfg(feature = "ais")]
     BBM {
-        /// The AIS channel used.
-        channel: Option<AisChannel>,
+        /// The AIS channel to transmit on: 0 for no preference, 1 for A, 2 for B or 3 for both.
+        channel: Option<TransmitChannel>,
         /// The AIS message type (8, 14, or 25).
         message_id: u8,
     },
@@ -86,6 +87,29 @@ pub enum Fields {
 }
 
 impl Encapsulation {
+    /// The message in an encapsulated sentence that holds all of it, such as one reassembled by
+    /// the decoder, so it can be split into a group of sentences.
+    ///
+    /// Returns `None` if the sentence is not encapsulated, is part of a group, or is missing the
+    /// fields of the first sentence in a group.
+    pub(crate) fn from_complete(sentence: Sentence) -> Option<Self> {
+        let (talker, sequence, fields, bits) = match sentence {
+            #[cfg(feature = "ais")]
+            Sentence::ABM { talker, sequence, destination: Some(destination), channel, message_id: Some(message_id), data } => {
+                (talker, sequence, Fields::ABM { destination, channel, message_id }, data)
+            }
+            #[cfg(feature = "ais")]
+            Sentence::BBM { talker, sequence, channel, message_id: Some(message_id), data } => (talker, sequence, Fields::BBM { channel, message_id }, data),
+            #[cfg(feature = "ais")]
+            Sentence::VDM(AisMessage { talker, sequence, channel, data }) => (talker, sequence, Fields::VDM { channel }, data),
+            #[cfg(feature = "ais")]
+            Sentence::VDO(AisMessage { talker, sequence, channel, data }) => (talker, sequence, Fields::VDO { channel }, data),
+            Sentence::Encapsulated { talker, mnemonic, sequence, fields, data } => (talker, sequence, Fields::Unknown { mnemonic, fields }, data),
+            _ => return None,
+        };
+        (sequence.total == 1).then_some(Self { talker, sequence: sequence.id, fields, bits })
+    }
+
     /// Returns an iterator over the individual encapsulated sentences for this message.
     pub fn messages(&self) -> impl Iterator<Item = Message> {
         // Calculate the number of characters needed for the parametric fields on the first and
@@ -227,16 +251,17 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
                 Fields::VDM { .. } => Sentence::VDM(AisMessage { talker, sequence, channel: None, data }),
                 #[cfg(feature = "ais")]
                 Fields::VDO { .. } => Sentence::VDO(AisMessage { talker, sequence, channel: None, data }),
-                Fields::Unknown { mnemonic, .. } => Sentence::Encapsulated {
+                // The fields are left empty rather than omitted, so the data stays in its position.
+                Fields::Unknown { mnemonic, fields } => Sentence::Encapsulated {
                     talker,
                     mnemonic: mnemonic.clone(),
                     sequence,
-                    fields: vec![],
+                    fields: vec![String::new(); fields.len()],
                     data,
                 },
             }
         };
-        Some(Message { tag_block: None, sentence })
+        Some(Message { tag_blocks: vec![], sentence })
     }
 }
 
@@ -283,5 +308,68 @@ fn armor(byte: u8) -> u8 {
     match byte {
         ..0b101000 => byte + 0b00110000,
         _ => byte + 0b00111000,
+    }
+}
+
+/// Convert ASCII-armored data to binary bits.
+///
+/// `fill_bits` is the number of padding bits that were added to the last character; these are
+/// discarded.
+pub fn from_armored(armored: &str, fill_bits: u8) -> Result<BitVec<u8, Msb0>, Error> {
+    let fill_bits = fill_bits as usize;
+    if fill_bits > 5 || fill_bits > armored.len() * 6 {
+        return Err(Error::new(ErrorKind::InvalidData, "Invalid fill bits"));
+    }
+    let mut bits = BitVec::with_capacity(armored.len() * 6);
+    for ch in armored.bytes() {
+        let value = dearmor(ch).ok_or_else(|| Error::new(ErrorKind::InvalidData, "Invalid armored character"))?;
+        for i in (0..6).rev() {
+            bits.push(value >> i & 1 == 1);
+        }
+    }
+    bits.truncate(bits.len() - fill_bits);
+    Ok(bits)
+}
+
+fn dearmor(ch: u8) -> Option<u8> {
+    match ch {
+        0x30..=0x57 => Some(ch - 0b00110000),
+        0x60..=0x77 => Some(ch - 0b00111000),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitvec::bitvec;
+
+    #[test]
+    fn armor_round_trip() {
+        let bits = bitvec![u8, Msb0; 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1];
+        let (armored, fill_bits) = into_armored(&bits);
+        let armored = str::from_utf8(armored.as_ref()).unwrap();
+        assert_eq!(fill_bits, 4);
+        assert_eq!(from_armored(armored, fill_bits).unwrap(), bits);
+    }
+
+    #[test]
+    fn dearmor_all_characters() {
+        let armored: String = (0u8..64).map(|value| armor(value) as char).collect();
+        let bits = from_armored(&armored, 0).unwrap();
+        assert_eq!(bits.len(), 64 * 6);
+        for (value, chunk) in bits.chunks(6).enumerate() {
+            assert_eq!(chunk.load_be::<u8>(), value as u8);
+        }
+    }
+
+    #[test]
+    fn dearmor_invalid() {
+        assert!(from_armored("0X", 0).is_err());
+        assert!(from_armored("0_", 0).is_err());
+        assert!(from_armored("0x", 0).is_err());
+        assert!(from_armored("00", 6).is_err());
+        assert!(from_armored("", 1).is_err());
+        assert!(from_armored("", 0).unwrap().is_empty());
     }
 }

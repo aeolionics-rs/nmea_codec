@@ -12,7 +12,7 @@ use deku::DekuContainerWrite;
 use nmea_codec::NmeaCodec;
 use nmea_codec::ais::IntoABM;
 use nmea_codec::encapsulation::Fields;
-use nmea_codec::types::{AisChannel, Talker};
+use nmea_codec::types::{AisChannel, Talker, TransmitChannel};
 use tokio_util::codec::Encoder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,10 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         retransmitted: false,
         message: Addressed::AreaNotice(notice),
     };
-    let encapsulation = ais_msg.to_abm(Talker::ECDIS, Some(0), Some(AisChannel::A));
+    let encapsulation = ais_msg.to_abm(Talker::ECDIS, Some(0), Some(TransmitChannel::A));
 
     buf.clear();
     encoder.encode(encapsulation, &mut buf)?;
+    // The transmit channel is numbered: 1 is channel A.
+    assert!(buf.starts_with(b"!EIABM,2,1,0,999999999,1,6,"));
     println!("{}", str::from_utf8(buf.as_ref())?);
     Ok(())
 }

@@ -52,7 +52,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             mode: PositioningSystemMode::Autonomous,
             nav_status: NavigationalStatus::NotValid,
         };
-        let message = Message { tag_block: None, sentence };
+        let message = Message { tag_blocks: vec![], sentence };
 
         _ = tx.send(message);
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;

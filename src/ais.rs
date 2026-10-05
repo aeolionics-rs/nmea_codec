@@ -5,7 +5,7 @@
 //! Support for AIS messages.
 //! 
 use crate::encapsulation::{Encapsulation, Fields, Sequence, into_armored};
-use crate::types::{AisChannel, Talker};
+use crate::types::{AisChannel, Talker, TransmitChannel};
 use ais_message::message::{AddressedApplicationMessage, AddressedSafetyMessage, BroadcastApplicationMessage, BroadcastSafetyMessage};
 use bitvec::order::Msb0;
 use bitvec::prelude::BitVec;
@@ -32,18 +32,18 @@ impl AisMessage {
             "!{talker}{id},{sequence},{channel},{armor_text},{padding}",
             talker = self.talker,
             sequence = self.sequence,
-            channel = format_option!(self.channel, "{}", ",,"),
+            channel = format_option!(self.channel, "{}", ""),
         )
     }
 }
 
 /// Trait for encapsulating an AIS addressed binary message.
 pub trait IntoABM {
-    fn to_abm(&self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> Encapsulation;
+    fn to_abm(&self, talker: Talker, sequence: Option<u8>, channel: Option<TransmitChannel>) -> Encapsulation;
 }
 
 impl IntoABM for AddressedApplicationMessage {
-    fn to_abm(&self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> Encapsulation {
+    fn to_abm(&self, talker: Talker, sequence: Option<u8>, channel: Option<TransmitChannel>) -> Encapsulation {
         let destination = self.destination.into();
         let bits = self.to_bits().expect("Failed to serialize addressed application message");
         let fields = Fields::ABM { destination, channel, message_id: 6 };
@@ -52,7 +52,7 @@ impl IntoABM for AddressedApplicationMessage {
 }
 
 impl IntoABM for AddressedSafetyMessage {
-    fn to_abm(&self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> Encapsulation {
+    fn to_abm(&self, talker: Talker, sequence: Option<u8>, channel: Option<TransmitChannel>) -> Encapsulation {
         let destination = self.destination.into();
         let bits = self.to_bits().expect("Failed to serialize addressed safety message");
         let fields = Fields::ABM { destination, channel, message_id: 12 };
@@ -62,11 +62,11 @@ impl IntoABM for AddressedSafetyMessage {
 
 /// Trait for encapsulating an AIS broadcast binary message.
 pub trait IntoBBM {
-    fn to_bbm(&self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> Encapsulation;
+    fn to_bbm(&self, talker: Talker, sequence: Option<u8>, channel: Option<TransmitChannel>) -> Encapsulation;
 }
 
 impl IntoBBM for BroadcastApplicationMessage {
-    fn to_bbm(&self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> Encapsulation {
+    fn to_bbm(&self, talker: Talker, sequence: Option<u8>, channel: Option<TransmitChannel>) -> Encapsulation {
         let bits = self.to_bits().expect("Failed to serialize broadcast application message");
         let fields = Fields::BBM { channel, message_id: 8 };
         Encapsulation { talker, sequence, fields, bits }
@@ -74,7 +74,7 @@ impl IntoBBM for BroadcastApplicationMessage {
 }
 
 impl IntoBBM for BroadcastSafetyMessage {
-    fn to_bbm(&self, talker: Talker, sequence: Option<u8>, channel: Option<AisChannel>) -> Encapsulation {
+    fn to_bbm(&self, talker: Talker, sequence: Option<u8>, channel: Option<TransmitChannel>) -> Encapsulation {
         let bits = self.to_bits().expect("Failed to serialize broadcast safety message");
         let fields = Fields::BBM { channel, message_id: 14 };
         Encapsulation { talker, sequence, fields, bits }

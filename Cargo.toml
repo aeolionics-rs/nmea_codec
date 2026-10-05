@@ -28,8 +28,13 @@ deku = "0.20.3"
 tracing = "0.1.44"
 
 [dev-dependencies]
+axum = "0.8.9"
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+rcgen = "0.14.10"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream"] }
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-serial = "5.5.0"
+tokio-util = { version = "0.7.18", features = ["codec", "io"] }
 tracing-subscriber = "0.3.23"
 
 [[example]]
@@ -42,4 +47,8 @@ required-features = ["ais"]
 
 [[example]]
 name = "send_area_notice"
+required-features = ["ais"]
+
+[[example]]
+name = "https_server"
 required-features = ["ais"]
