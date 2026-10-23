@@ -95,16 +95,29 @@ impl Encapsulation {
     pub(crate) fn from_complete(sentence: Sentence) -> Option<Self> {
         let (talker, sequence, fields, bits) = match sentence {
             #[cfg(feature = "ais")]
-            Sentence::ABM { talker, sequence, destination: Some(destination), channel, message_id: Some(message_id), data } => {
-                (talker, sequence, Fields::ABM { destination, channel, message_id }, data)
+            Sentence::ABM {
+                talker,
+                sequence,
+                destination: Some(destination),
+                channel,
+                message_id: Some(message_id),
+                data,
+            } => (talker, sequence, Fields::ABM { destination, channel, message_id }, data),
+            #[cfg(feature = "ais")]
+            Sentence::BBM { talker, sequence, channel, message_id: Some(message_id), data } => {
+                (talker, sequence, Fields::BBM { channel, message_id }, data)
             }
             #[cfg(feature = "ais")]
-            Sentence::BBM { talker, sequence, channel, message_id: Some(message_id), data } => (talker, sequence, Fields::BBM { channel, message_id }, data),
+            Sentence::VDM(AisMessage { talker, sequence, channel, data }) => {
+                (talker, sequence, Fields::VDM { channel }, data)
+            }
             #[cfg(feature = "ais")]
-            Sentence::VDM(AisMessage { talker, sequence, channel, data }) => (talker, sequence, Fields::VDM { channel }, data),
-            #[cfg(feature = "ais")]
-            Sentence::VDO(AisMessage { talker, sequence, channel, data }) => (talker, sequence, Fields::VDO { channel }, data),
-            Sentence::Encapsulated { talker, mnemonic, sequence, fields, data } => (talker, sequence, Fields::Unknown { mnemonic, fields }, data),
+            Sentence::VDO(AisMessage { talker, sequence, channel, data }) => {
+                (talker, sequence, Fields::VDO { channel }, data)
+            }
+            Sentence::Encapsulated { talker, mnemonic, sequence, fields, data } => {
+                (talker, sequence, Fields::Unknown { mnemonic, fields }, data)
+            }
             _ => return None,
         };
         (sequence.total == 1).then_some(Self { talker, sequence: sequence.id, fields, bits })
@@ -176,11 +189,7 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
         self.number = number + 1;
 
         let talker = self.outer.talker.clone();
-        let sequence = Sequence {
-            total,
-            number,
-            id: self.outer.sequence.clone(),
-        };
+        let sequence = Sequence { total, number, id: self.outer.sequence.clone() };
 
         let sentence = if number == 1 {
             // For the first sentence, use the first bits and include the fields.
@@ -205,19 +214,13 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
                     data,
                 },
                 #[cfg(feature = "ais")]
-                Fields::VDM { channel } => Sentence::VDM(AisMessage {
-                    talker,
-                    sequence,
-                    channel: channel.clone(),
-                    data,
-                }),
+                Fields::VDM { channel } => {
+                    Sentence::VDM(AisMessage { talker, sequence, channel: channel.clone(), data })
+                }
                 #[cfg(feature = "ais")]
-                Fields::VDO { channel } => Sentence::VDO(AisMessage {
-                    talker,
-                    sequence,
-                    channel: channel.clone(),
-                    data,
-                }),
+                Fields::VDO { channel } => {
+                    Sentence::VDO(AisMessage { talker, sequence, channel: channel.clone(), data })
+                }
                 Fields::Unknown { mnemonic, fields } => Sentence::Encapsulated {
                     talker,
                     mnemonic: mnemonic.clone(),
@@ -231,22 +234,11 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
             let data = self.chunks.as_mut()?.next()?.to_bitvec();
             match &self.outer.fields {
                 #[cfg(feature = "ais")]
-                Fields::ABM { .. } => Sentence::ABM {
-                    talker,
-                    sequence,
-                    destination: None,
-                    channel: None,
-                    message_id: None,
-                    data,
-                },
+                Fields::ABM { .. } => {
+                    Sentence::ABM { talker, sequence, destination: None, channel: None, message_id: None, data }
+                }
                 #[cfg(feature = "ais")]
-                Fields::BBM { .. } => Sentence::BBM {
-                    talker,
-                    sequence,
-                    channel: None,
-                    message_id: None,
-                    data,
-                },
+                Fields::BBM { .. } => Sentence::BBM { talker, sequence, channel: None, message_id: None, data },
                 #[cfg(feature = "ais")]
                 Fields::VDM { .. } => Sentence::VDM(AisMessage { talker, sequence, channel: None, data }),
                 #[cfg(feature = "ais")]

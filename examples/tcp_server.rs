@@ -4,7 +4,10 @@
 
 use chrono::SubsecRound;
 use futures::SinkExt;
-use nmea_codec::types::{CourseOverGround, Latitude, Longitude, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
+use nmea_codec::types::{
+    CourseOverGround, Latitude, Longitude, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode,
+    PositioningSystemStatus, SpeedOverGround, Talker,
+};
 use nmea_codec::{Message, NmeaCodec, Sentence};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast::Receiver;

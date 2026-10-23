@@ -94,9 +94,9 @@ use show_option::prelude::*;
 
 use bitvec::prelude::{BitVec, Msb0};
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::io::{Error, ErrorKind};
-use std::collections::HashMap;
 use std::str::FromStr;
 
 pub mod encapsulation;
@@ -115,10 +115,13 @@ use ais::AisMessage;
 use crate::encapsulation::{Encapsulation, Sequence};
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
-use tokio_util::codec::{Decoder, Encoder};
 use tag_block::TagBlock;
+use tokio_util::codec::{Decoder, Encoder};
 use tracing::{trace, warn};
-use types::{CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
+use types::{
+    CourseOverGround, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus,
+    SpeedOverGround, Talker,
+};
 use uom::si::velocity::knot;
 
 /// Maximum number of ASCII characters in a sentence, including the initial `$` or `!`
@@ -302,7 +305,12 @@ impl NmeaCodec {
         };
         let (_, _, partial_sequence, partial_data) = partial.sentence.encapsulation_mut().unwrap();
         if sequence.total != partial_sequence.total || sequence.number != partial_sequence.number + 1 {
-            warn!("discarding incomplete {} message, expected sentence {} of {}", key.1, partial_sequence.number + 1, partial_sequence.total);
+            warn!(
+                "discarding incomplete {} message, expected sentence {} of {}",
+                key.1,
+                partial_sequence.number + 1,
+                partial_sequence.total
+            );
             return None;
         }
         partial_data.extend_from_bitslice(data);
@@ -467,7 +475,9 @@ impl Sentence {
             Sentence::VDM(AisMessage { talker, sequence, data, .. }) => Some((*talker, "VDM", sequence, data)),
             #[cfg(feature = "ais")]
             Sentence::VDO(AisMessage { talker, sequence, data, .. }) => Some((*talker, "VDO", sequence, data)),
-            Sentence::Encapsulated { talker, mnemonic, sequence, data, .. } => Some((*talker, mnemonic.as_str(), sequence, data)),
+            Sentence::Encapsulated { talker, mnemonic, sequence, data, .. } => {
+                Some((*talker, mnemonic.as_str(), sequence, data))
+            }
             _ => None,
         }
     }
@@ -515,17 +525,7 @@ impl Encoder<Sentence> for NmeaCodec {
 fn put_sentence(item: &Sentence, dst: &mut BytesMut) -> Result<(), Error> {
     let start = dst.len();
     match item {
-        Sentence::RMC {
-            talker,
-            time_of_fix,
-            position,
-            sog,
-            cog,
-            variation,
-            status,
-            mode,
-            nav_status,
-        } => write!(
+        Sentence::RMC { talker, time_of_fix, position, sog, cog, variation, status, mode, nav_status } => write!(
             dst,
             "${talker}RMC,{time},{status},{lat},{long},{sog},{cog},{date},{var},{mode},{nav_status}",
             date = format_option!(time_of_fix.map(|time| { time.format("%d%m%y") }), "{}", ""),
@@ -537,14 +537,7 @@ fn put_sentence(item: &Sentence, dst: &mut BytesMut) -> Result<(), Error> {
             var = format_option!(variation, "{}", ","),
         ),
         #[cfg(feature = "ais")]
-        Sentence::ABM {
-            talker,
-            sequence,
-            destination,
-            channel,
-            message_id,
-            data,
-        } => {
+        Sentence::ABM { talker, sequence, destination, channel, message_id, data } => {
             let (armored, padding) = into_armored(data.as_ref());
             // SAFETY: the result only contains ASCII
             let armor_text = str::from_utf8(armored.as_ref()).unwrap();
@@ -580,13 +573,7 @@ fn put_sentence(item: &Sentence, dst: &mut BytesMut) -> Result<(), Error> {
             }
             Ok(())
         }
-        Sentence::Encapsulated {
-            talker,
-            mnemonic,
-            sequence,
-            fields,
-            data: bits,
-        } => {
+        Sentence::Encapsulated { talker, mnemonic, sequence, fields, data: bits } => {
             let (armored, padding) = encapsulation::into_armored(bits.as_bitslice());
             write!(dst, "!{talker}{mnemonic},{sequence}").unwrap();
             for field in fields {
@@ -614,7 +601,8 @@ fn put_checksum(start: usize, dst: &mut BytesMut) {
 /// of their ISO/IEC 8859-1 code.
 fn put_escaped(text: &str, dst: &mut BytesMut) -> Result<(), Error> {
     for ch in text.chars() {
-        let code = u8::try_from(ch).map_err(|_| Error::new(ErrorKind::InvalidInput, "Character not in ISO/IEC 8859-1"))?;
+        let code =
+            u8::try_from(ch).map_err(|_| Error::new(ErrorKind::InvalidInput, "Character not in ISO/IEC 8859-1"))?;
         if (0x20..0x7f).contains(&code) && !b"!$*,\\^~".contains(&code) {
             dst.put_u8(code);
         } else {
@@ -734,10 +722,7 @@ fn parse(mut buf: BytesMut) -> Result<Option<Message>, Error> {
                     return Err(Error::new(ErrorKind::InvalidData, "Proprietary sentence too short"));
                 }
                 let (mnemonic, data) = data[1..].split_at(3);
-                Sentence::Proprietary {
-                    mnemonic: mnemonic.to_string(),
-                    data: data.to_string(),
-                }
+                Sentence::Proprietary { mnemonic: mnemonic.to_string(), data: data.to_string() }
             } else if &data[4..=4] == "Q" {
                 // Query format: ttddQ,nnn
                 if data.len() != 9 {
@@ -753,12 +738,9 @@ fn parse(mut buf: BytesMut) -> Result<Option<Message>, Error> {
                 match mnemonic {
                     "RMC" => parse_rmc(talker, fields.collect())?,
                     _ => {
-                        let fields = fields.map(|field| unescape(field).map(Cow::into_owned)).collect::<Result<_, _>>()?;
-                        Sentence::Parametric {
-                            talker,
-                            mnemonic: mnemonic.to_string(),
-                            fields,
-                        }
+                        let fields =
+                            fields.map(|field| unescape(field).map(Cow::into_owned)).collect::<Result<_, _>>()?;
+                        Sentence::Parametric { talker, mnemonic: mnemonic.to_string(), fields }
                     }
                 }
             }
@@ -845,7 +827,10 @@ fn parse(mut buf: BytesMut) -> Result<Option<Message>, Error> {
                     talker,
                     mnemonic,
                     sequence,
-                    fields: fields.iter().map(|field| unescape(field).map(Cow::into_owned)).collect::<Result<_, _>>()?,
+                    fields: fields
+                        .iter()
+                        .map(|field| unescape(field).map(Cow::into_owned))
+                        .collect::<Result<_, _>>()?,
                     data: bits,
                 },
             }
@@ -895,24 +880,16 @@ fn parse_rmc(talker: Talker, fields: Vec<&str>) -> Result<Sentence, Error> {
     let time_of_fix = if date.is_empty() || time.is_empty() {
         None
     } else {
-        let date = NaiveDate::parse_from_str(date, "%d%m%y").map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid date"))?;
-        let time = NaiveTime::parse_from_str(time, "%H%M%S%.f").map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid time"))?;
+        let date = NaiveDate::parse_from_str(date, "%d%m%y")
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid date"))?;
+        let time = NaiveTime::parse_from_str(time, "%H%M%S%.f")
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid time"))?;
         Some(date.and_time(time).and_utc())
     };
     let position = Position::parse_str(latitude, latitude_ord, longitude, longitude_ord)?;
     let variation = MagneticVariation::parse_str(variation, variation_ord)?;
 
-    Ok(Sentence::RMC {
-        talker,
-        status,
-        mode,
-        nav_status,
-        time_of_fix,
-        position,
-        sog,
-        cog,
-        variation,
-    })
+    Ok(Sentence::RMC { talker, status, mode, nav_status, time_of_fix, position, sog, cog, variation })
 }
 
 #[cfg(test)]
@@ -925,11 +902,7 @@ mod tests {
         codec.encode(
             Message {
                 tag_blocks: vec![],
-                sentence: Sentence::Parametric {
-                    talker: Talker::GNSS,
-                    mnemonic: "RMC".to_string(),
-                    fields: vec![],
-                },
+                sentence: Sentence::Parametric { talker: Talker::GNSS, mnemonic: "RMC".to_string(), fields: vec![] },
             },
             &mut buf,
         )?;
@@ -969,15 +942,24 @@ mod tests {
         let longitude = |degrees| Longitude(Angle::new::<degree>(degrees)).to_string();
         assert_eq!((latitude(47.61), longitude(-122.4)), ("4736.6000,N".to_string(), "12224.0000,W".to_string()));
         // Degrees and minutes are padded with zeros.
-        assert_eq!((latitude(-(5.0 + 5.0 / 60.0)), longitude(27.0 + 5.0 / 60.0)), ("0505.0000,S".to_string(), "02705.0000,E".to_string()));
+        assert_eq!(
+            (latitude(-(5.0 + 5.0 / 60.0)), longitude(27.0 + 5.0 / 60.0)),
+            ("0505.0000,S".to_string(), "02705.0000,E".to_string())
+        );
         // Minutes that round up carry into the degrees.
-        assert_eq!((latitude(47.99999999), longitude(-179.99999999)), ("4800.0000,N".to_string(), "18000.0000,W".to_string()));
+        assert_eq!(
+            (latitude(47.99999999), longitude(-179.99999999)),
+            ("4800.0000,N".to_string(), "18000.0000,W".to_string())
+        );
         // A position that rounds to zero is north and east.
         assert_eq!((latitude(-1e-9), longitude(-1e-9)), ("0000.0000,N".to_string(), "00000.0000,E".to_string()));
 
         // What is written is read back.
         let position = Position::parse_str("0505.0000", "S", "02705.0000", "E").unwrap().unwrap();
-        assert_eq!((position.latitude.to_string(), position.longitude.to_string()), ("0505.0000,S".to_string(), "02705.0000,E".to_string()));
+        assert_eq!(
+            (position.latitude.to_string(), position.longitude.to_string()),
+            ("0505.0000,S".to_string(), "02705.0000,E".to_string())
+        );
     }
 
     #[test]
@@ -1066,7 +1048,8 @@ mod tests {
     fn escaped_fields() -> Result<(), Error> {
         let mut codec = NmeaCodec::new();
         let fields = vec!["a,b".to_string(), "^".to_string(), "é".to_string()];
-        let sentence = Sentence::Parametric { talker: Talker::GNSS, mnemonic: "xxx".to_string(), fields: fields.clone() };
+        let sentence =
+            Sentence::Parametric { talker: Talker::GNSS, mnemonic: "xxx".to_string(), fields: fields.clone() };
         let lines = encode_lines(&mut codec, Message { tag_blocks: vec![], sentence })?;
         assert_eq!(lines, vec!["$GNxxx,a^2Cb,^5E,^E9*7D\r\n"]);
 
@@ -1086,7 +1069,8 @@ mod tests {
 
         // A character outside ISO/IEC 8859-1 cannot be sent, and nothing is written.
         let tag_blocks = vec![TagBlock { tags: vec![tag_block::Tag::Source("AI0001".to_string())] }];
-        let sentence = Sentence::Parametric { talker: Talker::GNSS, mnemonic: "xxx".to_string(), fields: vec!["€".to_string()] };
+        let sentence =
+            Sentence::Parametric { talker: Talker::GNSS, mnemonic: "xxx".to_string(), fields: vec!["€".to_string()] };
         let mut buf = BytesMut::from("$GNxxx*71\r\n");
         assert!(codec.encode(Message { tag_blocks, sentence }, &mut buf).is_err());
         assert_eq!(&buf[..], b"$GNxxx*71\r\n");
@@ -1145,7 +1129,9 @@ mod tests {
         // A type 21 AtoN report from a StationKeeper shore station set up for testing.
         let mut buf = BytesMut::from("!AIVDM,1,1,,A,E=?eK;hab0b4WW5RR`2a0000000C@OBPvT340000002P10,4*53\r\n");
         let msg = NmeaCodec::new().decode(&mut buf)?.unwrap()?;
-        let Sentence::Encapsulated { talker, mnemonic, sequence, fields, data } = msg.sentence else { panic!("Unexpected sentence") };
+        let Sentence::Encapsulated { talker, mnemonic, sequence, fields, data } = msg.sentence else {
+            panic!("Unexpected sentence")
+        };
         assert_eq!(talker, Talker::AIS);
         assert_eq!(mnemonic, "VDM");
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, None));
@@ -1172,7 +1158,9 @@ mod tests {
         // A type 21 AtoN report from a StationKeeper shore station set up for testing.
         let mut buf = BytesMut::from("!AIVDM,1,1,,A,E=?eK;hab0b4WW5RR`2a0000000C@OBPvT340000002P10,4*53\r\n");
         let msg = NmeaCodec::new().decode(&mut buf)?.unwrap()?;
-        let Sentence::VDM(AisMessage { talker, sequence, channel, data }) = msg.sentence else { panic!("Unexpected sentence") };
+        let Sentence::VDM(AisMessage { talker, sequence, channel, data }) = msg.sentence else {
+            panic!("Unexpected sentence")
+        };
         assert_eq!(talker, Talker::AIS);
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, None));
         assert_eq!(channel, Some(AisChannel::A));
@@ -1191,7 +1179,9 @@ mod tests {
     fn vdo() -> Result<(), Error> {
         let mut buf = BytesMut::from("!AIVDO,1,1,,B,E=?eK;hab0b4WW5RR`2a0000000C@OBPvT340000002P10,4*52\r\n");
         let msg = NmeaCodec::new().decode(&mut buf)?.unwrap()?;
-        let Sentence::VDO(AisMessage { talker, sequence, channel, data }) = msg.sentence else { panic!("Unexpected sentence") };
+        let Sentence::VDO(AisMessage { talker, sequence, channel, data }) = msg.sentence else {
+            panic!("Unexpected sentence")
+        };
         assert_eq!(talker, Talker::AIS);
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, None));
         assert_eq!(channel, Some(AisChannel::B));
@@ -1230,7 +1220,9 @@ mod tests {
             data: data.clone(),
         }])?;
         assert!(text.starts_with("!AIABM,1,1,,338087471,1,6,"), "{text}");
-        let Sentence::ABM { talker, sequence, destination, channel, message_id, data: decoded } = sentence else { panic!("Unexpected sentence") };
+        let Sentence::ABM { talker, sequence, destination, channel, message_id, data: decoded } = sentence else {
+            panic!("Unexpected sentence")
+        };
         assert_eq!(talker, Talker::AIS);
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, None));
         assert_eq!(destination.map(|mmsi| mmsi.0), Some(338087471));
@@ -1259,7 +1251,9 @@ mod tests {
         ])?;
         assert!(text.starts_with("!AIABM,2,1,3,338087471,1,6,"), "{text}");
         assert!(text.contains("\r\n!AIABM,2,2,3,,,,"), "{text}");
-        let Sentence::ABM { sequence, destination, channel, message_id, data: decoded, .. } = sentence else { panic!("Unexpected sentence") };
+        let Sentence::ABM { sequence, destination, channel, message_id, data: decoded, .. } = sentence else {
+            panic!("Unexpected sentence")
+        };
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, Some(3)));
         assert_eq!(destination.map(|mmsi| mmsi.0), Some(338087471));
         assert_eq!((channel, message_id), (Some(TransmitChannel::A), Some(6)));
@@ -1282,7 +1276,9 @@ mod tests {
             data: data.clone(),
         }])?;
         assert!(text.starts_with("!AIBBM,1,1,,2,8,"), "{text}");
-        let Sentence::BBM { talker, sequence, channel, message_id, data: decoded } = sentence else { panic!("Unexpected sentence") };
+        let Sentence::BBM { talker, sequence, channel, message_id, data: decoded } = sentence else {
+            panic!("Unexpected sentence")
+        };
         assert_eq!(talker, Talker::AIS);
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, None));
         assert_eq!(channel, Some(TransmitChannel::B));
@@ -1307,7 +1303,9 @@ mod tests {
             },
         ])?;
         assert!(text.contains("\r\n!AIBBM,2,2,0,,,"), "{text}");
-        let Sentence::BBM { sequence, channel, message_id, data: decoded, .. } = sentence else { panic!("Unexpected sentence") };
+        let Sentence::BBM { sequence, channel, message_id, data: decoded, .. } = sentence else {
+            panic!("Unexpected sentence")
+        };
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, Some(0)));
         assert_eq!((channel, message_id), (Some(TransmitChannel::B), Some(8)));
         assert_eq!(decoded, data.iter().chain(data.iter()).collect::<BitVec<u8, Msb0>>());
@@ -1354,7 +1352,12 @@ mod tests {
 
         let data = bitvec![u8, Msb0; 1, 0, 1, 1, 0, 0];
         let sequence = Sequence { total: 1, number: 1, id: None };
-        let (text, sentence) = round_trip([Sentence::VDM(AisMessage { talker: Talker::AIS, sequence, channel: None, data: data.clone() })])?;
+        let (text, sentence) = round_trip([Sentence::VDM(AisMessage {
+            talker: Talker::AIS,
+            sequence,
+            channel: None,
+            data: data.clone(),
+        })])?;
         assert!(text.starts_with("!AIVDM,1,1,,,d,0*"), "{text}");
         let Sentence::VDM(AisMessage { channel, data: decoded, .. }) = sentence else { panic!("Unexpected sentence") };
         assert_eq!(channel, None);
@@ -1388,7 +1391,7 @@ mod tests {
     const PART_1: &str = "!AIVDM,2,1,3,B,55P5TL01VIaAL@7WKO@mBplU@<PDhh000000001S;AJ::4A80?4i@E53,0*3E\r\n";
     const PART_2: &str = "!AIVDM,2,2,3,B,1@0000000000000,2*55\r\n";
     // A type 21 AtoN report from a StationKeeper shore station set up for testing.
-    const SINGLE: &str ="!AIVDM,1,1,,A,E=?eK;hab0b4WW5RR`2a0000000C@OBPvT340000002P10,4*53\r\n";
+    const SINGLE: &str = "!AIVDM,1,1,,A,E=?eK;hab0b4WW5RR`2a0000000C@OBPvT340000002P10,4*53\r\n";
 
     /// Formats an encapsulated sentence, adding the checksum.
     fn sentence(content: &str) -> String {
@@ -1515,7 +1518,8 @@ mod tests {
     fn encode_lines(codec: &mut NmeaCodec, message: Message) -> Result<Vec<String>, Error> {
         let mut buf = BytesMut::new();
         codec.encode(message, &mut buf)?;
-        let lines: Vec<String> = String::from_utf8(buf.to_vec()).unwrap().split_inclusive("\r\n").map(String::from).collect();
+        let lines: Vec<String> =
+            String::from_utf8(buf.to_vec()).unwrap().split_inclusive("\r\n").map(String::from).collect();
         for line in &lines {
             assert!(line.len() <= MAX_SENTENCE, "{line}");
         }
@@ -1585,7 +1589,9 @@ mod tests {
         buf.put_slice(sentence("AIXYZ,2,1,7,f1,f2,ww,0").as_bytes());
         buf.put_slice(sentence("AIXYZ,2,2,7,,,w,0").as_bytes());
         let msg = codec.decode(&mut buf)?.unwrap()?;
-        let Sentence::Encapsulated { mnemonic, sequence, fields, data, .. } = msg.sentence else { panic!("Unexpected sentence") };
+        let Sentence::Encapsulated { mnemonic, sequence, fields, data, .. } = msg.sentence else {
+            panic!("Unexpected sentence")
+        };
         assert_eq!(mnemonic, "XYZ");
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, Some(7)));
         assert_eq!(fields, vec!["f1", "f2"]);
@@ -1626,10 +1632,7 @@ mod tests {
         buf.clear();
         let msg = Message {
             tag_blocks: vec![],
-            sentence: Sentence::Proprietary {
-                mnemonic: "yyy".to_string(),
-                data: "abcdef".to_string(),
-            },
+            sentence: Sentence::Proprietary { mnemonic: "yyy".to_string(), data: "abcdef".to_string() },
         };
         codec.encode(msg, &mut buf)?;
         assert_eq!(buf.as_ref(), b"$Pyyyabcdef*2E\r\n");

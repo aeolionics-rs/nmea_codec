@@ -4,7 +4,10 @@
 
 use bytes::BytesMut;
 use chrono::SubsecRound;
-use nmea_codec::types::{CourseOverGround, Latitude, Longitude, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
+use nmea_codec::types::{
+    CourseOverGround, Latitude, Longitude, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode,
+    PositioningSystemStatus, SpeedOverGround, Talker,
+};
 use nmea_codec::{NmeaCodec, Sentence};
 use tokio_util::codec::Encoder;
 use uom::si::angle::degree;

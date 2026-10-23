@@ -125,12 +125,16 @@ impl TryFrom<&str> for Tag {
     /// Parses a tag from `code:value`, replacing any `^hh` hex forms with the characters.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let invalid = |what| move |_| Error::new(ErrorKind::InvalidData, what);
-        let (code, value) = value.split_once(':').ok_or_else(|| Error::new(ErrorKind::InvalidData, "Tag without a code"))?;
+        let (code, value) =
+            value.split_once(':').ok_or_else(|| Error::new(ErrorKind::InvalidData, "Tag without a code"))?;
         let (code, value) = (unescape(code)?, unescape(value)?);
         Ok(match code.as_ref() {
             "c" => {
                 let millis = value.parse().map_err(invalid("Invalid tag time"))?;
-                Tag::Time(DateTime::from_timestamp_millis(millis).ok_or_else(|| Error::new(ErrorKind::InvalidData, "Invalid tag time"))?)
+                Tag::Time(
+                    DateTime::from_timestamp_millis(millis)
+                        .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Invalid tag time"))?,
+                )
             }
             "d" => Tag::Destination(value.into_owned()),
             "g" => Tag::Group(Group::try_from(value.as_ref())?),
@@ -138,10 +142,7 @@ impl TryFrom<&str> for Tag {
             "r" => Tag::RelativeTime(value.parse().map_err(invalid("Invalid tag relative time"))?),
             "s" => Tag::Source(value.into_owned()),
             "t" => Tag::Text(value.into_owned()),
-            _ => Tag::Unknown {
-                code: code.into_owned(),
-                value: value.into_owned(),
-            },
+            _ => Tag::Unknown { code: code.into_owned(), value: value.into_owned() },
         })
     }
 }
@@ -152,7 +153,8 @@ impl TryFrom<&str> for Group {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let invalid = || Error::new(ErrorKind::InvalidData, "Invalid tag group");
         let mut parts = value.split('-');
-        let (Some(number), Some(total), Some(id), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+        let (Some(number), Some(total), Some(id), None) = (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
             return Err(invalid());
         };
         Ok(Group {
@@ -231,14 +233,16 @@ mod tests {
     #[test]
     fn encode() -> Result<(), Error> {
         let block = TagBlock {
-            tags: vec![Tag::Source("AI0001".to_string()), Tag::Destination("EI0002".to_string()), Tag::Time("2026-01-01T00:00:00Z".parse().unwrap())],
+            tags: vec![
+                Tag::Source("AI0001".to_string()),
+                Tag::Destination("EI0002".to_string()),
+                Tag::Time("2026-01-01T00:00:00Z".parse().unwrap()),
+            ],
         };
         assert_eq!(encoded(&block)?, "\\s:AI0001,d:EI0002,c:1767225600000*7D\\");
         assert_eq!(TagBlock::decode(encoded(&block)?.as_bytes())?, block);
 
-        let block = TagBlock {
-            tags: vec![Tag::Group(Group { number: 2, total: 3, id: 1234 })],
-        };
+        let block = TagBlock { tags: vec![Tag::Group(Group { number: 2, total: 3, id: 1234 })] };
         assert_eq!(encoded(&block)?, "\\g:2-3-1234*58\\");
         Ok(())
     }
@@ -246,9 +250,7 @@ mod tests {
     #[test]
     fn escaped() -> Result<(), Error> {
         // Reserved, non-printable and non-ASCII characters are sent in their hex form.
-        let block = TagBlock {
-            tags: vec![Tag::Text("a,b*c\\d^e\nf é".to_string())],
-        };
+        let block = TagBlock { tags: vec![Tag::Text("a,b*c\\d^e\nf é".to_string())] };
         assert_eq!(encoded(&block)?, "\\t:a^2Cb^2Ac^5Cd^5Ee^0Af ^E9*60\\");
         assert_eq!(TagBlock::decode(encoded(&block)?.as_bytes())?, block);
 
@@ -266,7 +268,9 @@ mod tests {
         assert!(encoded(&text(76)).is_err());
 
         // A longer tag block is decoded but cannot be encoded.
-        let block = TagBlock::decode(b"\\s:AI0001,x:01234567890123456789012345678901234567890123456789012345678901234567890123456789*2E\\")?;
+        let block = TagBlock::decode(
+            b"\\s:AI0001,x:01234567890123456789012345678901234567890123456789012345678901234567890123456789*2E\\",
+        )?;
         assert!(encoded(&block).is_err());
         Ok(())
     }
@@ -276,13 +280,8 @@ mod tests {
         // A character outside ISO/IEC 8859-1 cannot be sent.
         assert!(encoded(&TagBlock { tags: vec![Tag::Text("€".to_string())] }).is_err());
         assert!(
-            encoded(&TagBlock {
-                tags: vec![Tag::Unknown {
-                    code: "x:y".to_string(),
-                    value: "1".to_string()
-                }]
-            })
-            .is_err()
+            encoded(&TagBlock { tags: vec![Tag::Unknown { code: "x:y".to_string(), value: "1".to_string() }] })
+                .is_err()
         );
     }
 }

@@ -467,7 +467,13 @@ impl Display for Latitude {
 
 /// Writes an angle as whole degrees with `width` digits and minutes to 1/10_000, then the
 /// hemisphere: `positive` for north or east and `negative` for south or west.
-fn write_degrees_minutes(f: &mut Formatter<'_>, angle: &Angle, width: usize, positive: char, negative: char) -> std::fmt::Result {
+fn write_degrees_minutes(
+    f: &mut Formatter<'_>,
+    angle: &Angle,
+    width: usize,
+    positive: char,
+    negative: char,
+) -> std::fmt::Result {
     let degrees = angle.get::<degree>();
     // Round to the precision written before splitting, so the minutes never round up to 60.
     let units = (degrees.abs() * 60.0 * 10_000.0).round() as u64;
@@ -510,7 +516,12 @@ pub struct Position {
     pub longitude: Longitude,
 }
 impl Position {
-    pub fn parse_str(latitude: &str, latitude_ord: &str, longitude: &str, longitude_ord: &str) -> Result<Option<Position>, Error> {
+    pub fn parse_str(
+        latitude: &str,
+        latitude_ord: &str,
+        longitude: &str,
+        longitude_ord: &str,
+    ) -> Result<Option<Position>, Error> {
         let Some(latitude) = Latitude::parse_str(latitude, latitude_ord)? else { return Ok(None) };
         let Some(longitude) = Longitude::parse_str(longitude, longitude_ord)? else { return Ok(None) };
         Ok(Some(Position { latitude, longitude }))
@@ -563,7 +574,6 @@ impl MagneticVariation {
         let variation = Angle::new::<degree>(variation);
         Ok(Some(MagneticVariation(variation)))
     }
-
 }
 impl Display for MagneticVariation {
     /// The variation to a tenth of a degree, then `E` or `W`.

@@ -62,11 +62,20 @@ async fn stream(id: usize, client: reqwest::Client, sse: bool) -> Result<(), Box
     }
     let response = request.send().await?.error_for_status()?;
     // The server decides the format so use the content type it returned.
-    let is_event_stream = response.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).is_some_and(|value| value.starts_with(EVENT_STREAM));
-    tracing::info!("stream {id} connected using {:?}{}", response.version(), if is_event_stream { " with events" } else { "" });
+    let is_event_stream = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with(EVENT_STREAM));
+    tracing::info!(
+        "stream {id} connected using {:?}{}",
+        response.version(),
+        if is_event_stream { " with events" } else { "" }
+    );
 
     let bytes = response.bytes_stream().map_err(io::Error::other);
-    let bytes: BoxStream<'static, io::Result<Bytes>> = if is_event_stream { event_data(bytes).boxed() } else { bytes.boxed() };
+    let bytes: BoxStream<'static, io::Result<Bytes>> =
+        if is_event_stream { event_data(bytes).boxed() } else { bytes.boxed() };
     let mut messages = FramedRead::new(StreamReader::new(bytes), NmeaCodec::new());
     while let Some(message) = messages.next().await {
         match message? {
@@ -81,11 +90,15 @@ async fn stream(id: usize, client: reqwest::Client, sse: bool) -> Result<(), Box
 /// Convert a Server-Sent Event stream into the sentences carried in each event's data, terminated with CR LF.
 ///
 /// The server sends one sentence per event so each `data` line is treated as a sentence and other fields are ignored.
-fn event_data(bytes: impl Stream<Item = io::Result<Bytes>> + Send + 'static) -> impl Stream<Item = io::Result<Bytes>> + Send + 'static {
-    FramedRead::new(StreamReader::new(bytes), LinesCodec::new()).map_err(io::Error::other).try_filter_map(|line| async move {
-        Ok(line.strip_prefix("data:").map(|data| {
-            let sentence = data.strip_prefix(' ').unwrap_or(data);
-            Bytes::from(format!("{sentence}\r\n"))
-        }))
-    })
+fn event_data(
+    bytes: impl Stream<Item = io::Result<Bytes>> + Send + 'static,
+) -> impl Stream<Item = io::Result<Bytes>> + Send + 'static {
+    FramedRead::new(StreamReader::new(bytes), LinesCodec::new()).map_err(io::Error::other).try_filter_map(
+        |line| async move {
+            Ok(line.strip_prefix("data:").map(|data| {
+                let sentence = data.strip_prefix(' ').unwrap_or(data);
+                Bytes::from(format!("{sentence}\r\n"))
+            }))
+        },
+    )
 }

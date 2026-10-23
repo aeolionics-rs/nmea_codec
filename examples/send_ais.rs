@@ -26,11 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         manoeuvre: SpecialManoeuvre::NotAvailable,
         transmit_power: TransmitPower::High,
         raim: RaimFlag::NotInUse,
-        state: CommunicationState {
-            sync: 0b00,
-            slot_time_out: 0b001,
-            sub_message: 0b01_111001_000100,
-        },
+        state: CommunicationState { sync: 0b00, slot_time_out: 0b001, sub_message: 0b01_111001_000100 },
     });
     let encapsulation = nmea_codec::encapsulation::Encapsulation {
         talker: Talker::AIS,

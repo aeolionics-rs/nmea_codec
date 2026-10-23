@@ -20,7 +20,10 @@ use axum_server::tls_rustls::RustlsConfig;
 use bytes::{Bytes, BytesMut};
 use chrono::SubsecRound;
 use futures::{Stream, StreamExt};
-use nmea_codec::types::{CourseOverGround, Latitude, Longitude, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode, PositioningSystemStatus, SpeedOverGround, Talker};
+use nmea_codec::types::{
+    CourseOverGround, Latitude, Longitude, MagneticVariation, NavigationalStatus, Position, PositioningSystemMode,
+    PositioningSystemStatus, SpeedOverGround, Talker,
+};
 use nmea_codec::{Message, NmeaCodec, Sentence};
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -41,7 +44,9 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate a self-signed certificate for localhost.
     let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])?;
-    let config = RustlsConfig::from_pem(certified.cert.pem().into_bytes(), certified.signing_key.serialize_pem().into_bytes()).await?;
+    let config =
+        RustlsConfig::from_pem(certified.cert.pem().into_bytes(), certified.signing_key.serialize_pem().into_bytes())
+            .await?;
 
     let app = Router::new().route("/nmea0183", get(nmea0183));
     let addr: SocketAddr = DEFAULT_ADDR.parse()?;
@@ -76,7 +81,12 @@ fn accepts_event_stream(headers: &HeaderMap) -> bool {
         .iter()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|value| value.split(','))
-        .any(|media_range| media_range.split(';').next().is_some_and(|media_type| media_type.trim().eq_ignore_ascii_case("text/event-stream")))
+        .any(|media_range| {
+            media_range
+                .split(';')
+                .next()
+                .is_some_and(|media_type| media_type.trim().eq_ignore_ascii_case("text/event-stream"))
+        })
 }
 
 /// An endless stream of encoded RMC sentences, one per interval.
