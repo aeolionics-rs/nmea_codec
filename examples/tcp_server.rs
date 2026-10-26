@@ -66,8 +66,8 @@ async fn send_messages(mut messages: Receiver<Message>, stream: TcpStream) -> st
     let mut writer = FramedWrite::with_capacity(stream, NmeaCodec::new(), 128);
     loop {
         match messages.recv().await {
-            Ok(msg) => _ = writer.send(msg).await?,
-            Err(RecvError::Lagged(_)) => continue,
+            Ok(msg) => () = writer.send(msg).await?,
+            Err(RecvError::Lagged(_)) => {}
             Err(RecvError::Closed) => break,
         }
     }

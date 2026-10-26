@@ -4,7 +4,10 @@
 
 use ais_message::Message::ScheduledPositionReport;
 use ais_message::message::PositionReport;
-use ais_message::types::*;
+use ais_message::types::{
+    CommunicationState, CourseOverGround, Heading, MMSI, NavigationalStatus, PositionAccuracy, RaimFlag, RateOfTurn,
+    RepeatCount, SpecialManoeuvre, SpeedOverGround, StationPosition, Timestamp, TransmitPower,
+};
 use bytes::BytesMut;
 use deku::DekuContainerWrite;
 use nmea_codec::NmeaCodec;
@@ -18,10 +21,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         source: MMSI::new(127)?,
         status: NavigationalStatus::UnderWay,
         rate_of_turn: RateOfTurn(5),
-        speed_over_ground: SpeedOverGround(0b1001100100),
+        speed_over_ground: SpeedOverGround(0b0010_0110_0100),
         position: StationPosition::new(5.0 + 5.0 / 60.0, 27.0 + 5.0 / 60.0, PositionAccuracy::Low),
-        course_over_ground: CourseOverGround(0b001110111111),
-        heading: Heading(0b101011111),
+        course_over_ground: CourseOverGround(0b0011_1011_1111),
+        heading: Heading(0b0001_0101_1111),
         timestamp: Timestamp::Second(53),
         manoeuvre: SpecialManoeuvre::NotAvailable,
         transmit_power: TransmitPower::High,

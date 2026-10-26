@@ -233,7 +233,7 @@ pub const MAX_DATA: usize = MAX_SENTENCE - 1 - 3 - 2;
 /// # #[cfg(not(feature = "ais"))]
 /// # fn main() {}
 /// ```
-
+///
 /// [`Decoder`]: Decoder
 /// [`Encoder`]: Encoder
 pub struct NmeaCodec {
@@ -254,14 +254,22 @@ pub struct NmeaCodec {
 /// and stops it being joined to a later message that reuses its sequence id.
 const FRAGMENT_LIFETIME: u64 = 10;
 
+impl Default for NmeaCodec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NmeaCodec {
     /// Creates a new codec that reassembles multi-sentence messages when decoding.
+    #[must_use]
     pub fn new() -> Self {
         Self { next: 0, reassembly: true, sentences: 0, fragments: HashMap::new() }
     }
 
     /// Creates a new codec that decodes each sentence of a multi-sentence message separately,
     /// such as to forward the sentences as they were received.
+    #[must_use]
     pub fn without_reassembly() -> Self {
         Self { reassembly: false, ..Self::new() }
     }
@@ -326,7 +334,7 @@ impl NmeaCodec {
 
 /// A NMEA 0183 message.
 ///
-/// **Message format:** \[tag_block ...\] \<sentence\> \r\n
+/// **Message format:** \[`tag_block` ...\] \<sentence\> \r\n
 #[derive(Clone)]
 pub struct Message {
     pub tag_blocks: Vec<TagBlock>,
@@ -566,7 +574,7 @@ fn put_sentence(item: &Sentence, dst: &mut BytesMut) -> Result<(), Error> {
         #[cfg(feature = "ais")]
         Sentence::VDM(msg) => msg.encode("VDM", dst),
         Sentence::Parametric { talker, mnemonic, fields } => {
-            write!(dst, "${}{}", talker, mnemonic).unwrap();
+            write!(dst, "${talker}{mnemonic}").unwrap();
             for field in fields {
                 dst.put_u8(b',');
                 put_escaped(field, dst)?;
@@ -594,7 +602,7 @@ fn put_sentence(item: &Sentence, dst: &mut BytesMut) -> Result<(), Error> {
 
 fn put_checksum(start: usize, dst: &mut BytesMut) {
     let checksum = dst.as_ref()[start..].iter().fold(0u8, |sum, byte| sum ^ *byte);
-    write!(dst, "*{checksum:02X}").expect("Failed to write checksum")
+    write!(dst, "*{checksum:02X}").expect("Failed to write checksum");
 }
 
 /// Writes text to a field, sending reserved and non-printable characters in the `^hh` hex form
@@ -698,6 +706,7 @@ fn validate(buf: &[u8]) -> Result<(char, &str), Error> {
     Err(Error::new(ErrorKind::InvalidData, "No checksum found"))
 }
 
+#[expect(clippy::too_many_lines, reason = "one parse, each kind of sentence in turn")]
 fn parse(mut buf: BytesMut) -> Result<Option<Message>, Error> {
     let mut tag_blocks = vec![];
     while buf.first() == Some(&b'\\') {
@@ -717,11 +726,11 @@ fn parse(mut buf: BytesMut) -> Result<Option<Message>, Error> {
     let sentence = match kind {
         '$' => {
             // Proprietary format: Pnnn..
-            if data.starts_with('P') {
-                if data.len() < 4 {
+            if let Some(data) = data.strip_prefix('P') {
+                if data.len() < 3 {
                     return Err(Error::new(ErrorKind::InvalidData, "Proprietary sentence too short"));
                 }
-                let (mnemonic, data) = data[1..].split_at(3);
+                let (mnemonic, data) = data.split_at(3);
                 Sentence::Proprietary { mnemonic: mnemonic.to_string(), data: data.to_string() }
             } else if &data[4..=4] == "Q" {
                 // Query format: ttddQ,nnn
@@ -735,13 +744,11 @@ fn parse(mut buf: BytesMut) -> Result<Option<Message>, Error> {
                 let mut fields = data[2..].split(',');
                 let mnemonic = fields.next().unwrap();
 
-                match mnemonic {
-                    "RMC" => parse_rmc(talker, fields.collect())?,
-                    _ => {
-                        let fields =
-                            fields.map(|field| unescape(field).map(Cow::into_owned)).collect::<Result<_, _>>()?;
-                        Sentence::Parametric { talker, mnemonic: mnemonic.to_string(), fields }
-                    }
+                if mnemonic == "RMC" {
+                    parse_rmc(talker, &fields.collect::<Vec<_>>())?
+                } else {
+                    let fields = fields.map(|field| unescape(field).map(Cow::into_owned)).collect::<Result<_, _>>()?;
+                    Sentence::Parametric { talker, mnemonic: mnemonic.to_string(), fields }
                 }
             }
         }
@@ -769,10 +776,10 @@ fn parse(mut buf: BytesMut) -> Result<Option<Message>, Error> {
             let total = u8::from_str(x1).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid total"))?;
             let number = u8::from_str(x2).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid sequence number"))?;
             let id = {
-                if !x3.is_empty() {
-                    Some(u8::from_str(x3).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?)
-                } else {
+                if x3.is_empty() {
                     None
+                } else {
+                    Some(u8::from_str(x3).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid fill bits"))?)
                 }
             };
             let sequence = Sequence { total, number, id };
@@ -858,7 +865,7 @@ fn parse_message_id(field: &str) -> Result<u8, Error> {
     u8::from_str(field).map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid message ID"))
 }
 
-fn parse_rmc(talker: Talker, fields: Vec<&str>) -> Result<Sentence, Error> {
+fn parse_rmc(talker: Talker, fields: &[&str]) -> Result<Sentence, Error> {
     if fields.len() < 12 {
         return Err(Error::new(ErrorKind::InvalidData, "Insufficient fields in RMC"));
     }
@@ -948,7 +955,7 @@ mod tests {
         );
         // Minutes that round up carry into the degrees.
         assert_eq!(
-            (latitude(47.99999999), longitude(-179.99999999)),
+            (latitude(47.999_999_99), longitude(-179.999_999_99)),
             ("4800.0000,N".to_string(), "18000.0000,W".to_string())
         );
         // A position that rounds to zero is north and east.
@@ -1089,18 +1096,18 @@ mod tests {
 
         // Decode the GNSS sentence.
         let msg = codec.decode(&mut buf)?.unwrap()?;
-        assert!(msg.tag_blocks.is_empty());
+        assert_eq!(msg.tag_blocks, [] as [tag_block::TagBlock; 0]);
         if let Sentence::Parametric { talker, mnemonic, fields } = msg.sentence {
             assert_eq!(talker, Talker::GNSS);
             assert_eq!(mnemonic, "xxx");
-            assert!(fields.is_empty())
+            assert_eq!(fields, [] as [std::string::String; 0]);
         } else {
             panic!("Unexpected sentence");
         }
 
         // Decode the VDM sentence.
         let msg = codec.decode(&mut buf)?.unwrap()?;
-        assert!(msg.tag_blocks.is_empty());
+        assert_eq!(msg.tag_blocks, [] as [tag_block::TagBlock; 0]);
         if let Sentence::Encapsulated { talker, mnemonic, .. } = msg.sentence {
             assert_eq!(talker, Talker::AIS);
             assert_eq!(mnemonic, "yyy");
@@ -1169,7 +1176,7 @@ mod tests {
 
         let (_, ais_msg) = ais_message::Message::from_bytes((data.as_raw_slice(), 0)).unwrap();
         let ais_message::Message::AtonReport(report) = ais_msg else { panic!("Unexpected message {ais_msg:?}") };
-        assert_eq!(u32::from(report.source), 888888111);
+        assert_eq!(u32::from(report.source), 888_888_111);
         assert_eq!(report.name.to_string(), "STATIONKEEPER");
         Ok(())
     }
@@ -1213,7 +1220,7 @@ mod tests {
         let (text, sentence) = round_trip([Sentence::ABM {
             talker: Talker::AIS,
             sequence: Sequence { total: 1, number: 1, id: None },
-            destination: Some(MMSI(338087471)),
+            destination: Some(MMSI(338_087_471)),
             // The channel to transmit on is numbered, with 1 for A.
             channel: Some(TransmitChannel::A),
             message_id: Some(6),
@@ -1225,7 +1232,7 @@ mod tests {
         };
         assert_eq!(talker, Talker::AIS);
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, None));
-        assert_eq!(destination.map(|mmsi| mmsi.0), Some(338087471));
+        assert_eq!(destination.map(|mmsi| mmsi.0), Some(338_087_471));
         assert_eq!(channel, Some(TransmitChannel::A));
         assert_eq!(message_id, Some(6));
         assert_eq!(decoded, data);
@@ -1235,7 +1242,7 @@ mod tests {
             Sentence::ABM {
                 talker: Talker::AIS,
                 sequence: Sequence { total: 2, number: 1, id: Some(3) },
-                destination: Some(MMSI(338087471)),
+                destination: Some(MMSI(338_087_471)),
                 channel: Some(TransmitChannel::A),
                 message_id: Some(6),
                 data: data.clone(),
@@ -1255,7 +1262,7 @@ mod tests {
             panic!("Unexpected sentence")
         };
         assert_eq!((sequence.total, sequence.number, sequence.id), (1, 1, Some(3)));
-        assert_eq!(destination.map(|mmsi| mmsi.0), Some(338087471));
+        assert_eq!(destination.map(|mmsi| mmsi.0), Some(338_087_471));
         assert_eq!((channel, message_id), (Some(TransmitChannel::A), Some(6)));
         assert_eq!(decoded, data.iter().chain(data.iter()).collect::<BitVec<u8, Msb0>>());
         Ok(())
@@ -1400,7 +1407,10 @@ mod tests {
     }
 
     /// Decodes all complete messages in the buffer, returning their sequence and data length.
-    fn decode_all(codec: &mut NmeaCodec, buf: &mut BytesMut) -> Result<Vec<(u8, u8, Option<u8>, usize)>, Error> {
+    /// A decoded message's total sentences, sequence and data length.
+    type Decoded = (u8, u8, Option<u8>, usize);
+
+    fn decode_all(codec: &mut NmeaCodec, buf: &mut BytesMut) -> Result<Vec<Decoded>, Error> {
         let mut result = Vec::new();
         while let Some(msg) = codec.decode(buf)? {
             let mut msg = msg?;
@@ -1509,8 +1519,8 @@ mod tests {
         for n in 0..100 {
             buf.put_slice(sentence(&format!("AIX{n:02},2,1,1,A,ww,0")).as_bytes());
         }
-        assert!(decode_all(&mut codec, &mut buf)?.is_empty());
-        assert_eq!(codec.fragments.len(), FRAGMENT_LIFETIME as usize + 1);
+        assert_eq!(decode_all(&mut codec, &mut buf)?, [] as [(u8, u8, std::option::Option<u8>, usize); 0]);
+        assert_eq!(codec.fragments.len(), usize::try_from(FRAGMENT_LIFETIME).unwrap() + 1);
         Ok(())
     }
 
@@ -1610,7 +1620,7 @@ mod tests {
         assert_eq!(channel, Some(AisChannel::B));
         let (_, ais_msg) = ais_message::Message::from_bytes((data.as_raw_slice(), 0)).unwrap();
         let ais_message::Message::StaticData(report) = ais_msg else { panic!("Unexpected message {ais_msg:?}") };
-        assert_eq!(u32::from(report.source), 369190000);
+        assert_eq!(u32::from(report.source), 369_190_000);
         assert_eq!(report.call_sign.to_string(), "WDA9674");
         assert_eq!(report.name.to_string(), "MT.MITCHELL");
         assert_eq!(report.destination.to_string(), "SEATTLE");

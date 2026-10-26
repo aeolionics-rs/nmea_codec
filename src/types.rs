@@ -28,7 +28,7 @@ pub enum Talker {
     AisAton,
     /// AR: AIS Receiving Station
     AisReceivingStation,
-    /// AS: AIS Station (ITU_R M.1371, "Limited Base Station")
+    /// AS: AIS Station (`ITU_R` M.1371, "Limited Base Station")
     AisLimitedBaseStation,
     /// AT: AIS Transmitting Station
     AisTransmittingStation,
@@ -76,9 +76,9 @@ pub enum Talker {
     FireSprinkler,
     /// GA: Galileo Positioning System
     Galileo,
-    /// GB: BeiDou Satellite System (BDS) Receiver
+    /// GB: `BeiDou` Satellite System (BDS) Receiver
     BeiDou,
-    /// GI: NavIC Indian Regional Navigation Satellite System (IRNSS) Receiver
+    /// GI: `NavIC` Indian Regional Navigation Satellite System (IRNSS) Receiver
     NavIC,
     /// GL: GLONASS Receiver
     Glonass,
@@ -211,6 +211,7 @@ pub enum Talker {
 impl TryFrom<&str> for Talker {
     type Error = std::io::Error;
 
+    #[expect(clippy::too_many_lines, reason = "a code table, one arm a talker")]
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         if value.len() != 2 {
             return Err(std::io::Error::new(ErrorKind::InvalidInput, "Invalid length"));
@@ -328,6 +329,7 @@ impl TryFrom<&str> for Talker {
 }
 
 impl Display for Talker {
+    #[expect(clippy::too_many_lines, reason = "a code table, one arm a talker")]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Talker::IndependentAisBaseStation => "AB",
@@ -441,6 +443,11 @@ impl Display for Talker {
 pub struct Latitude(pub Angle);
 
 impl Latitude {
+    /// The latitude from its degrees and minutes and its hemisphere, `None` when either is empty.
+    ///
+    /// # Errors
+    ///
+    /// An [`ErrorKind::InvalidData`] error for a field that isn't a number.
     pub fn parse_str(latitude: &str, latitude_ord: &str) -> Result<Option<Latitude>, Error> {
         if latitude.len() < 4 || latitude_ord.is_empty() {
             return Ok(None);
@@ -461,21 +468,22 @@ impl Latitude {
 impl Display for Latitude {
     /// The latitude as `ddmm.mmmm,N` or `S`.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write_degrees_minutes(f, &self.0, 2, 'N', 'S')
+        write_degrees_minutes(f, self.0, 2, 'N', 'S')
     }
 }
 
-/// Writes an angle as whole degrees with `width` digits and minutes to 1/10_000, then the
+/// Writes an angle as whole degrees with `width` digits and minutes to `1/10_000`, then the
 /// hemisphere: `positive` for north or east and `negative` for south or west.
 fn write_degrees_minutes(
     f: &mut Formatter<'_>,
-    angle: &Angle,
+    angle: Angle,
     width: usize,
     positive: char,
     negative: char,
 ) -> std::fmt::Result {
     let degrees = angle.get::<degree>();
     // Round to the precision written before splitting, so the minutes never round up to 60.
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "a whole, positive angle")]
     let units = (degrees.abs() * 60.0 * 10_000.0).round() as u64;
     let (whole, minutes) = (units / 600_000, units % 600_000);
     let hemisphere = if degrees >= 0.0 || units == 0 { positive } else { negative };
@@ -485,6 +493,11 @@ fn write_degrees_minutes(
 #[derive(Clone, Debug)]
 pub struct Longitude(pub Angle);
 impl Longitude {
+    /// The longitude from its degrees and minutes and its hemisphere, `None` when either is empty.
+    ///
+    /// # Errors
+    ///
+    /// An [`ErrorKind::InvalidData`] error for a field that isn't a number.
     pub fn parse_str(longitude: &str, longitude_ord: &str) -> Result<Option<Longitude>, Error> {
         if longitude.len() < 5 || longitude_ord.is_empty() {
             return Ok(None);
@@ -506,7 +519,7 @@ impl Longitude {
 impl Display for Longitude {
     /// The longitude as `dddmm.mmmm,E` or `W`.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write_degrees_minutes(f, &self.0, 3, 'E', 'W')
+        write_degrees_minutes(f, self.0, 3, 'E', 'W')
     }
 }
 
@@ -516,6 +529,11 @@ pub struct Position {
     pub longitude: Longitude,
 }
 impl Position {
+    /// The position from its latitude and longitude fields, `None` when either is empty.
+    ///
+    /// # Errors
+    ///
+    /// An [`ErrorKind::InvalidData`] error for a field that isn't a number.
     pub fn parse_str(
         latitude: &str,
         latitude_ord: &str,
@@ -531,6 +549,11 @@ impl Position {
 #[derive(Clone, Debug)]
 pub struct SpeedOverGround(pub Velocity);
 impl SpeedOverGround {
+    /// The speed in knots, `None` when the field is empty.
+    ///
+    /// # Errors
+    ///
+    /// An [`ErrorKind::InvalidData`] error for a field that isn't a number.
     pub fn parse_str(speed: &str) -> Result<Option<SpeedOverGround>, Error> {
         if speed.is_empty() {
             return Ok(None);
@@ -543,6 +566,11 @@ impl SpeedOverGround {
 #[derive(Clone, Debug)]
 pub struct CourseOverGround(pub Angle);
 impl CourseOverGround {
+    /// The course in degrees true, `None` when the field is empty.
+    ///
+    /// # Errors
+    ///
+    /// An [`ErrorKind::InvalidData`] error for a field that isn't a number.
     pub fn parse_str(cog: &str) -> Result<Option<CourseOverGround>, Error> {
         if cog.is_empty() {
             return Ok(None);
@@ -554,6 +582,7 @@ impl CourseOverGround {
 impl Display for CourseOverGround {
     /// The course in degrees true to a tenth of a degree, from 0.0 to 359.9.
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "0 to 3599 tenths")]
         let tenths = (self.0.get::<degree>() * 10.0).round().rem_euclid(3600.0) as u32;
         write!(f, "{}.{}", tenths / 10, tenths % 10)
     }
@@ -561,6 +590,11 @@ impl Display for CourseOverGround {
 #[derive(Clone, Debug)]
 pub struct MagneticVariation(pub Angle);
 impl MagneticVariation {
+    /// The variation in degrees east or west, `None` when either field is empty.
+    ///
+    /// # Errors
+    ///
+    /// An [`ErrorKind::InvalidData`] error for a field that isn't a number.
     pub fn parse_str(variation: &str, variation_ord: &str) -> Result<Option<MagneticVariation>, Error> {
         if variation.is_empty() || variation_ord.is_empty() {
             return Ok(None);
@@ -580,6 +614,7 @@ impl Display for MagneticVariation {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let degrees = self.0.get::<degree>();
         // Round before choosing the direction, so a variation that rounds to zero is not west.
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "a whole, positive angle")]
         let tenths = (degrees.abs() * 10.0).round() as u64;
         let direction = if degrees >= 0.0 || tenths == 0 { 'E' } else { 'W' };
         write!(f, "{}.{},{direction}", tenths / 10, tenths % 10)

@@ -133,9 +133,9 @@ impl Encapsulation {
             #[cfg(feature = "ais")]
             Fields::BBM { .. } => (4, 2),
             #[cfg(feature = "ais")]
-            Fields::VDM { channel, .. } => (channel.map(|_| 2).unwrap_or(1), 1),
+            Fields::VDM { channel, .. } => (channel.map_or(1, |_| 2), 1),
             #[cfg(feature = "ais")]
-            Fields::VDO { channel, .. } => (channel.map(|_| 2).unwrap_or(1), 1),
+            Fields::VDO { channel, .. } => (channel.map_or(1, |_| 2), 1),
             Fields::Unknown { fields, .. } => {
                 let count = fields.len();
                 let field_data = fields.iter().fold(0, |acc, f| acc + f.len());
@@ -150,11 +150,11 @@ impl Encapsulation {
         } else {
             let (first, rest) = self.bits.split_at(first_size);
             let chunks = rest.chunks(chunk_size);
-            let (_, max) = chunks.size_hint();
-            let total = 1 + max.unwrap() as u8;
+            // Never more sentences than a u8 counts: the message would be too long to send.
+            let total = u8::try_from(1 + chunks.len()).unwrap_or(u8::MAX);
             (first, Some(chunks), total)
         };
-        EncapsulationIterator { outer: &self, number: 1, first, chunks, total }
+        EncapsulationIterator { outer: self, number: 1, first, chunks, total }
     }
 }
 
@@ -177,7 +177,7 @@ pub struct EncapsulationIterator<'a> {
     chunks: Option<Chunks<'a, u8, Msb0>>,
 }
 
-impl<'a> Iterator for EncapsulationIterator<'a> {
+impl Iterator for EncapsulationIterator<'_> {
     type Item = Message;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -188,8 +188,8 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
         }
         self.number = number + 1;
 
-        let talker = self.outer.talker.clone();
-        let sequence = Sequence { total, number, id: self.outer.sequence.clone() };
+        let talker = self.outer.talker;
+        let sequence = Sequence { total, number, id: self.outer.sequence };
 
         let sentence = if number == 1 {
             // For the first sentence, use the first bits and include the fields.
@@ -199,28 +199,20 @@ impl<'a> Iterator for EncapsulationIterator<'a> {
                 Fields::ABM { destination, channel, message_id } => Sentence::ABM {
                     talker,
                     sequence,
-                    destination: Some(destination.clone()),
-                    channel: channel.clone(),
-                    message_id: Some(message_id.clone()),
+                    destination: Some(*destination),
+                    channel: *channel,
+                    message_id: Some(*message_id),
                     data,
                 },
 
                 #[cfg(feature = "ais")]
-                Fields::BBM { channel, message_id } => Sentence::BBM {
-                    talker,
-                    sequence,
-                    channel: channel.clone(),
-                    message_id: Some(message_id.clone()),
-                    data,
-                },
-                #[cfg(feature = "ais")]
-                Fields::VDM { channel } => {
-                    Sentence::VDM(AisMessage { talker, sequence, channel: channel.clone(), data })
+                Fields::BBM { channel, message_id } => {
+                    Sentence::BBM { talker, sequence, channel: *channel, message_id: Some(*message_id), data }
                 }
                 #[cfg(feature = "ais")]
-                Fields::VDO { channel } => {
-                    Sentence::VDO(AisMessage { talker, sequence, channel: channel.clone(), data })
-                }
+                Fields::VDM { channel } => Sentence::VDM(AisMessage { talker, sequence, channel: *channel, data }),
+                #[cfg(feature = "ais")]
+                Fields::VDO { channel } => Sentence::VDO(AisMessage { talker, sequence, channel: *channel, data }),
                 Fields::Unknown { mnemonic, fields } => Sentence::Encapsulated {
                     talker,
                     mnemonic: mnemonic.clone(),
@@ -279,10 +271,11 @@ impl Display for Sequence {
 }
 
 /// Convert binary bits to ASCII-armored data.
+#[must_use]
 pub fn into_armored(data: &BitSlice<u8, Msb0>) -> (Bytes, u8) {
-    let mut result = BytesMut::with_capacity((data.len() + 5) / 6);
+    let mut result = BytesMut::with_capacity(data.len().div_ceil(6));
     let mut chunks = data.chunks_exact(6);
-    while let Some(chunk) = chunks.next() {
+    for chunk in chunks.by_ref() {
         result.put_u8(armor(chunk.load_be()));
     }
     let remainder = chunks.remainder();
@@ -291,15 +284,17 @@ pub fn into_armored(data: &BitSlice<u8, Msb0>) -> (Bytes, u8) {
     } else {
         let padding = 6 - remainder.len();
         result.put_u8(armor(remainder.load_be::<u8>() << padding));
-        padding as u8
+        #[expect(clippy::cast_possible_truncation, reason = "under six bits of padding")]
+        let padding = padding as u8;
+        padding
     };
     (result.freeze(), padding)
 }
 
 fn armor(byte: u8) -> u8 {
     match byte {
-        ..0b101000 => byte + 0b00110000,
-        _ => byte + 0b00111000,
+        ..0b0010_1000 => byte + 0b0011_0000,
+        _ => byte + 0b0011_1000,
     }
 }
 
@@ -307,6 +302,11 @@ fn armor(byte: u8) -> u8 {
 ///
 /// `fill_bits` is the number of padding bits that were added to the last character; these are
 /// discarded.
+///
+/// # Errors
+///
+/// An [`ErrorKind::InvalidData`] error for more than five fill bits, or a character that isn't
+/// armored six-bit data.
 pub fn from_armored(armored: &str, fill_bits: u8) -> Result<BitVec<u8, Msb0>, Error> {
     let fill_bits = fill_bits as usize;
     if fill_bits > 5 || fill_bits > armored.len() * 6 {
@@ -325,8 +325,8 @@ pub fn from_armored(armored: &str, fill_bits: u8) -> Result<BitVec<u8, Msb0>, Er
 
 fn dearmor(ch: u8) -> Option<u8> {
     match ch {
-        0x30..=0x57 => Some(ch - 0b00110000),
-        0x60..=0x77 => Some(ch - 0b00111000),
+        0x30..=0x57 => Some(ch - 0b0011_0000),
+        0x60..=0x77 => Some(ch - 0b0011_1000),
         _ => None,
     }
 }
@@ -351,7 +351,7 @@ mod tests {
         let bits = from_armored(&armored, 0).unwrap();
         assert_eq!(bits.len(), 64 * 6);
         for (value, chunk) in bits.chunks(6).enumerate() {
-            assert_eq!(chunk.load_be::<u8>(), value as u8);
+            assert_eq!(usize::from(chunk.load_be::<u8>()), value);
         }
     }
 

@@ -25,6 +25,15 @@ pub struct AisMessage {
 }
 
 impl AisMessage {
+    /// Writes the message as AIVDM sentences into `dst`, `id` naming the sentence.
+    ///
+    /// # Errors
+    ///
+    /// The formatter's error writing a sentence.
+    ///
+    /// # Panics
+    ///
+    /// Never: armored data is ASCII.
     pub fn encode(&self, id: &'static str, dst: &mut BytesMut) -> std::fmt::Result {
         let (armored, padding) = into_armored(self.data.as_ref());
         // SAFETY: the result only contains ASCII

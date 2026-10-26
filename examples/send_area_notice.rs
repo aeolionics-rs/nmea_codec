@@ -5,7 +5,7 @@
 use ais_asm::area_notice::{AreaNotice, Description, Position, Radius, Scale, SubArea};
 use ais_asm::{Addressed, Broadcast, Linkage};
 use ais_message::message::{AddressedApplicationMessage, BroadcastApplicationMessage};
-use ais_message::types::*;
+use ais_message::types::{MMSI, RepeatCount};
 use ais_types::{Minutes, MonthDayHourMinute};
 use bytes::BytesMut;
 use deku::DekuContainerWrite;
@@ -18,8 +18,8 @@ use tokio_util::codec::Encoder;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let notice = area_notice();
     let ais_msg = ais_message::Message::BroadcastBinaryMessage(BroadcastApplicationMessage {
-        repeat: Default::default(),
-        source: MMSI::new(3669999)?,
+        repeat: RepeatCount::default(),
+        source: MMSI::new(3_669_999)?,
         message: Broadcast::AreaNotice(notice),
     });
     let encapsulation = nmea_codec::encapsulation::Encapsulation {
@@ -36,9 +36,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let notice = area_notice();
     let ais_msg = AddressedApplicationMessage {
-        repeat: Default::default(),
-        source: MMSI::new(3669999)?,
-        destination: MMSI::new(999999999)?,
+        repeat: RepeatCount::default(),
+        source: MMSI::new(3_669_999)?,
+        destination: MMSI::new(999_999_999)?,
         sequence: Default::default(),
         retransmitted: false,
         message: Addressed::AreaNotice(notice),
@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn area_notice() -> AreaNotice {
-    let notice = AreaNotice {
+    AreaNotice {
         linkage: Linkage(501),
         description: Description::MammalsInArea_ReduceSpeed,
         start: MonthDayHourMinute { month: 7, day: 21, hour: 13, minute: 45 },
@@ -62,15 +62,14 @@ fn area_notice() -> AreaNotice {
         subareas: vec![
             SubArea::Circle {
                 scale: Scale(0),
-                position: Position::new(42.386320965494704, -70.91003783738283, 4),
+                position: Position::new(42.386_320_965_494_704, -70.910_037_837_382_83, 4),
                 radius: Radius(0),
             },
             SubArea::Circle {
                 scale: Scale(0),
-                position: Position::new(42.386320965494704, -70.91003783738283, 4),
+                position: Position::new(42.386_320_965_494_704, -70.910_037_837_382_83, 4),
                 radius: Radius(4000),
             },
         ],
-    };
-    notice
+    }
 }
