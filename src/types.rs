@@ -339,7 +339,7 @@ impl Display for Talker {
             Talker::AIS => "AI",
             Talker::AisAton => "AN",
             Talker::AisReceivingStation => "AR",
-            Talker::AisLimitedBaseStation => "AT",
+            Talker::AisLimitedBaseStation => "AS",
             Talker::AisTransmittingStation => "AT",
             Talker::AisSimplexRepeater => "AX",
             Talker::Bilge => "BI",
@@ -788,5 +788,26 @@ impl Display for MMSI {
 impl From<ais_message::types::MMSI> for MMSI {
     fn from(mmsi: ais_message::types::MMSI) -> Self {
         Self(mmsi.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every talker ID reads and writes the same, the named ones and the others alike: no two
+    /// talkers write one ID.
+    #[test]
+    fn every_talker_writes_the_id_it_reads() {
+        let symbols = (b'A'..=b'Z').chain(b'0'..=b'9');
+        for first in symbols.clone() {
+            for second in symbols.clone() {
+                let id = String::from_utf8(vec![first, second]).unwrap();
+                let talker = Talker::try_from(id.as_str()).unwrap();
+                assert_eq!(talker.to_string(), id, "{talker:?}");
+            }
+        }
+        assert!(matches!(Talker::try_from("AS").unwrap(), Talker::AisLimitedBaseStation));
+        assert!(matches!(Talker::try_from("AT").unwrap(), Talker::AisTransmittingStation));
     }
 }
