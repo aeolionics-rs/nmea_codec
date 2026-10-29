@@ -345,9 +345,8 @@ pub struct Message {
 #[derive(Clone, Debug)]
 pub enum Sentence {
     // Well-known parametric sentences.
-    /// Recommended minimum specific GNSS data.
-    ///
-    /// Time, date, position, course and speed provided by a GNSS navigation receiver.
+    /// The least a GNSS receiver is recommended to send: when and where its fix was taken, and
+    /// the course and speed over the ground.
     RMC {
         /// The device sending the message.
         talker: Talker,
@@ -365,10 +364,8 @@ pub enum Sentence {
         sog: Option<SpeedOverGround>,
         /// True course over ground.
         cog: Option<CourseOverGround>,
-        /// Magnetic variation at position.
-        ///
-        /// East is positive and subtracts from True course.
-        /// West is negative and adds to True course.
+        /// The magnetic variation at the position, positive to the east and negative to the west:
+        /// a magnetic course is the true course less the variation.
         variation: Option<MagneticVariation>,
     },
 
@@ -1393,10 +1390,9 @@ mod tests {
         assert!(decodes_invalid(&mut NmeaCodec::new(), &mut buf));
     }
 
-    // A type 5 message in two sentences, from gpsd's "AIVDM/AIVDO protocol decoding"
-    // (www/AIVDM.adoc).
-    const PART_1: &str = "!AIVDM,2,1,3,B,55P5TL01VIaAL@7WKO@mBplU@<PDhh000000001S;AJ::4A80?4i@E53,0*3E\r\n";
-    const PART_2: &str = "!AIVDM,2,2,3,B,1@0000000000000,2*55\r\n";
+    // A type 5 message in two sentences, made up for these tests.
+    const PART_1: &str = "!AIVDM,2,1,3,B,50000Op000004Dtk4004DtiE>1@E=@00000000166@:556fd08kSmj1D,0*16\r\n";
+    const PART_2: &str = "!AIVDM,2,2,3,B,Q@0000000000000,2*35\r\n";
     // A type 21 AtoN report from a StationKeeper shore station set up for testing.
     const SINGLE: &str = "!AIVDM,1,1,,A,E=?eK;hab0b4WW5RR`2a0000000C@OBPvT340000002P10,4*53\r\n";
 
@@ -1620,10 +1616,10 @@ mod tests {
         assert_eq!(channel, Some(AisChannel::B));
         let (_, ais_msg) = ais_message::Message::from_bytes((data.as_raw_slice(), 0)).unwrap();
         let ais_message::Message::StaticData(report) = ais_msg else { panic!("Unexpected message {ais_msg:?}") };
-        assert_eq!(u32::from(report.source), 369_190_000);
-        assert_eq!(report.call_sign.to_string(), "WDA9674");
-        assert_eq!(report.name.to_string(), "MT.MITCHELL");
-        assert_eq!(report.destination.to_string(), "SEATTLE");
+        assert_eq!(u32::from(report.source), 127);
+        assert_eq!(report.call_sign.to_string(), "AEOL1");
+        assert_eq!(report.name.to_string(), "AEOLUS TEST");
+        assert_eq!(report.destination.to_string(), "NOWHERE");
         Ok(())
     }
 

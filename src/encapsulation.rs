@@ -4,11 +4,9 @@
 
 //! Support for encapsulated sentences.
 //!
-//! Encapsulation is used to convey information when the data content is unknown or additional
-//! bandwidth is needed. AIS messages, for example, are conveyed as binary data in sentences.
-//!
-//! The data content is broken into a sequence of encapsulation sentences, each of which contains
-//! a single block of binary data, wrapped in ASCII armoring, with zero or more parametric fields.
+//! An encapsulated sentence carries binary data, such as an AIS message, armored as printable
+//! characters of six bits each. Data too long for one sentence is split across a numbered group of
+//! them, and any other fields a sentence has come before its data.
 //!
 #[cfg(feature = "ais")]
 use crate::ais::AisMessage;
