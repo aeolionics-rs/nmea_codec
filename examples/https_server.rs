@@ -64,7 +64,7 @@ async fn nmea0183(headers: HeaderMap) -> Response {
     if accepts_event_stream(&headers) {
         // SSE data cannot contain line breaks so each event carries the sentence without its CR LF.
         let events = sentences.map(|sentence| {
-            let text = std::str::from_utf8(&sentence).expect("NMEA sentences should be ASCII");
+            let text = std::str::from_utf8(&sentence).expect("sentences should be ASCII");
             Ok::<Event, Infallible>(Event::default().data(text.trim_end()))
         });
         Sse::new(events).into_response()

@@ -14,204 +14,211 @@ use uom::si::velocity::knot;
 /// An identifier for a device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Talker {
-    /// AB: Independent AIS Base Station
+    // AIS.
+    /// Independent AIS Base Station
     IndependentAisBaseStation,
-    /// AD: Dependent AIS Base Station
+    /// Dependent AIS Base Station
     DependentAisBaseStation,
-    /// AG: HEADING TRACK CONTROLLER (Autopilot), General
-    HeadingController,
-    /// AP: HEADING TRACK CONTROLLER (Autopilot), Magnetic
-    HeadingControllerMagnetic,
-    /// AI: Mobile Class A or B AIS Station
+    /// Mobile Class A or B AIS Station
     AIS,
-    /// AN: AIS Aids to Navigation Station
+    /// AIS Aids to Navigation Station
     AisAton,
-    /// AR: AIS Receiving Station
+    /// AIS Receiving Station
     AisReceivingStation,
-    /// AS: AIS Station (`ITU_R` M.1371, "Limited Base Station")
+    /// AIS Limited Base Station
     AisLimitedBaseStation,
-    /// AT: AIS Transmitting Station
+    /// AIS Transmitting Station
     AisTransmittingStation,
-    /// AX: AIS Simplex Repeater Station
+    /// AIS Simplex Repeater Station
     AisSimplexRepeater,
-    /// BI: Bilge Systems
-    Bilge,
-    /// BN: Bridge Navigational Watch Alarm System
-    BridgeAlarm,
-    /// CA: Central Alarm Management
-    CentralAlarm,
-    /// CD: Digital Selective Calling (DSC)
-    DSC,
-    /// CR: Data Receiver
-    DataReceiver,
-    /// CS: Satellite
-    Satellite,
-    /// CT: Radio-Telephone (MF/HF)
-    MfHfTelephone,
-    /// CV: Radio-Telephone (VHF)
-    VhfTelephone,
-    /// CX: Scanning Receiver
-    ScanningReceiver,
-    /// DF: Direction Finder
-    DirectionFinder,
-    /// DU: Duplex Repeater Station
-    DuplexRepeater,
-    /// DP: Dynamic Position
-    DynamicPosition,
-    /// EC: Electronic Chart System (ECS)
-    ECS,
-    /// EI: Electronic Chart Display & Information System (ECDIS)
-    ECDIS,
-    /// EP: Emergency Position Indicating Beacon (EPIRB)
-    EPIRB,
-    /// ER: Engine Room Monitoring Systems
-    EngineRoom,
-    /// FD: Fire Door Controller/Monitoring Point
-    FireDoor,
-    /// FE: Fire Extinguisher System
-    FireExtinguisher,
-    /// FR: Fire Detection Point
-    FireDetection,
-    /// FS: Fire Sprinkler System
-    FireSprinkler,
-    /// GA: Galileo Positioning System
-    Galileo,
-    /// GB: `BeiDou` Satellite System (BDS) Receiver
-    BeiDou,
-    /// GI: `NavIC` Indian Regional Navigation Satellite System (IRNSS) Receiver
-    NavIC,
-    /// GL: GLONASS Receiver
-    Glonass,
-    /// GN: Global Navigation Satellite System (GNSS) Receiver
-    GNSS,
-    /// GP: Global Positioning System (GPS) Receiver
-    GPS,
-    /// GQ: Quasi-Zenith Satellite System (QZSS) Receiver
-    QuasiZenith,
-    /// HC: Compass, Magnetic
-    MagneticCompass,
-    /// HE: Gyro, North Seeking
-    NorthSeekingGyroCompass,
-    /// HF: Fluxgate
-    FluxgateCompass,
-    /// HN: Gyro, Non-North Seeking
-    NonNorthSeekingGyroCompass,
-    /// HD: Hull Door Controller/Monitoring Panel
-    HullDoorMonitor,
-    /// HS: Hull Stress Monitoring
-    HullStressMonitor,
-    /// HV: Motion Reference Unit - Heave
-    Heave,
-    /// IA: Integrated Autonomous
-    IntegratedAutonomous,
-    /// II: Integrated Instrumentation
-    IntegratedInstrumentation,
-    /// IN: Integrated Navigation
-    IntegratedNavigation,
-    /// JA: Alarm and Monitoring System
-    AlarmMonitoring,
-    /// JB: Reefer Monitoring System
-    ReeferMonitoring,
-    /// JC: Power Management System
-    PowerManagement,
-    /// JD: Propulsion Control System
-    PropulsionControl,
-    /// JE: Engine Control Console
-    EngineConsole,
-    /// JF: Propulsion Boiler
-    PropulsionBoiler,
-    /// JG: Auxiliary Boiler
-    AuxiliaryBoiler,
-    /// JH: Electronic Governor System
-    ElectronicGovernor,
-    /// LC: Loran C
-    LoranC,
-    /// MX: Multiplexer
-    Multiplexer,
-    /// NA: Navigation Autonomous
-    AutonomousNavigation,
-    /// ND: Network Device
-    NetworkDevice,
-    /// NV: Night Vision
-    NightVision,
-    /// NL: Navigation Light Controller
-    NavigationLight,
-    /// RA: Radar and/or Radar Plotting
-    Radar,
-    /// RB: Record Book
-    RecordBook,
-    /// RC: Propulsion Machinery, including Remote Control
-    PropulsionMachinery,
-    /// RI: Rudder Angle Indicator
-    RudderAngle,
-    /// RP: Inclinometer
-    Inclinometer,
-    /// SA: Physical Shore AIS Station
+    /// AIS Physical Shore Station
     AisPhysicalShoreStation,
-    /// SC: Steering Control System/Device
-    SteeringControl,
-    /// SD: Sounder, depth
-    DepthSounder,
-    /// SG: Steering Gear/Steering Engine
-    Steering,
-    /// SN: Electronic Positioning System, other/general
+
+    // Satellite and radio positioning.
+    /// Galileo
+    Galileo,
+    /// `BeiDou`
+    BeiDou,
+    /// `NavIC`
+    NavIC,
+    /// GLONASS
+    Glonass,
+    /// Combined Global Navigation Satellite Systems (GNSS)
+    GNSS,
+    /// Global Positioning System
+    GPS,
+    /// Quasi-Zenith Satellite System
+    QuasiZenith,
+    /// Loran C
+    LoranC,
+    /// General Electronic Positioning System
     PositioningSystem,
-    /// SS: Sounder, scanning
+
+    // Navigation: heading, rudder, track control, speed, depth, radar, lights and the environment.
+    /// General Heading Controller
+    HeadingController,
+    /// Magnetic Heading Controller
+    MagneticHeadingController,
+    /// Direction Finder
+    DirectionFinder,
+    /// Dynamic Position
+    DynamicPosition,
+    /// Magnetic Compass
+    MagneticCompass,
+    /// Fluxgate Compass
+    FluxgateCompass,
+    /// North-Seeking Gyro Compass
+    NorthSeekingGyroCompass,
+    /// Non-North-Seeking Gyro Compass
+    NonNorthSeekingGyroCompass,
+    /// Rudder Angle Indicator
+    RudderAngle,
+    /// Autonomous Navigation
+    AutonomousNavigation,
+    /// Navigation Light Controller
+    NavigationLight,
+    /// Night Vision
+    NightVision,
+    /// Radar
+    Radar,
+    /// Heave
+    Heave,
+    /// Inclinometer
+    Inclinometer,
+    /// Depth Sounder
+    DepthSounder,
+    /// Scanning Depth Sounder
     ScanningSounder,
-    /// TC: Track Control System
+    /// Track Control System
     TrackControlSystem,
-    /// TI: Turn Rate Indicator
+    /// Turn Rate Indicator
     TurnRateIndicator,
-    /// UP: Microprocessor Controller
-    Microprocessor,
-    /// VD: Doppler, other/general
+    /// Doppler Speed Sensor
     DopplerVelocity,
-    /// VM: Speed Log, Water, Magnetic
+    /// Magnetic Water Speed Sensor
     MagneticSpeed,
-    /// VW: Speed Log, Water Mechanical
+    /// Mechanical Water Speed Sensor
     MechanicalSpeed,
-    /// VA: VHF Data Exchange System (VDES) ASM
-    VdesASM,
-    /// VS: VHF Data Exchange System (VDES) Satellite
-    VdesSatellite,
-    /// VT: VHF Data Exchange System (VDES) Terrestrial
-    VdesTerrestrial,
-    /// VD: Voyage Data Recorder
-    VDR,
-    /// WD: Watertight Door Controller/Monitoring Panel
-    WatertightDoor,
-    /// WI: Weather Instruments
+    /// Weather Instruments
     Weather,
-    /// WL: Water Level Detection Systems
+
+    // Communications.
+    /// Digital Selective Calling (DSC)
+    DSC,
+    /// General Data Receiver
+    DataReceiver,
+    /// Satellite
+    Satellite,
+    /// MF/HF Radio-Telephone
+    MfHfTelephone,
+    /// VHF Radio-Telephone
+    VhfTelephone,
+    /// Scanning Receiver
+    ScanningReceiver,
+    /// Duplex Repeater
+    DuplexRepeater,
+    /// VHF Data Exchange System (VDES) Terrestrial
+    VdesTerrestrial,
+    /// VHF Data Exchange System (VDES) Satellite
+    VdesSatellite,
+    /// VHF Data Exchange System (VDES) for Application Specific Messages
+    VdesASM,
+
+    // Safety: alarms, fire, doors, flooding and emergency.
+    /// Alarm and Monitoring System
+    AlarmMonitoring,
+    /// Bridge Navigational Watch Alarm System
+    BridgeWatchAlarm,
+    /// Central Alert Management
+    CentralAlarm,
+    /// Emergency Position Indicating Beacon (EPIRB)
+    EPIRB,
+    /// Fire Door Controller or Monitor
+    FireDoor,
+    /// Fire Extinguisher System
+    FireExtinguisher,
+    /// Fire Detection Point
+    FireDetection,
+    /// Fire Sprinkler System
+    FireSprinkler,
+    /// Watertight Door Controller or Monitor
+    WatertightDoor,
+    /// Hull Door Controller or Monitor
+    HullDoorMonitor,
+    /// Hull Stress Monitoring
+    HullStressMonitor,
+    /// Water Level Detector
     WaterLevel,
-    /// YX: Transducer
-    Transducer,
-    /// ZA: Atomic Clock
+
+    // Machinery and ship systems.
+    /// Bilge Systems
+    Bilge,
+    /// Engine Room Monitoring Systems
+    EngineRoom,
+    /// Reefer Monitoring System
+    ReeferMonitoring,
+    /// Power Management System
+    PowerManagement,
+    /// Propulsion Control System
+    PropulsionControl,
+    /// Engine Control Console
+    EngineConsole,
+    /// Propulsion Boiler
+    PropulsionBoiler,
+    /// Auxiliary Boiler
+    AuxiliaryBoiler,
+    /// Electronic Governor System
+    ElectronicGovernor,
+    /// Propulsion Machinery or its Remote Control
+    PropulsionMachinery,
+    /// Steering Controller or Control System
+    SteeringControl,
+    /// Steering Gear or Engine
+    Steering,
+
+    // Time.
+    /// Atomic Clock
     AtomicClock,
-    /// ZC: Chronometer
+    /// Chronometer
     Chronometer,
-    /// ZQ: Quartz
+    /// Quartz
     QuartzClock,
-    /// ZV: Radio Update
+    /// Radio Update
     RadioClock,
 
-    User0,
-    User1,
-    User2,
-    User3,
-    User4,
-    User5,
-    User6,
-    User7,
-    User8,
-    User9,
+    // Displays and integrated navigation.
+    /// Electronic Chart System (ECS)
+    ECS,
+    /// Electronic Chart Display & Information System (ECDIS)
+    ECDIS,
+    /// Integrated Instrumentation
+    IntegratedInstrumentation,
+    /// Integrated Navigation
+    IntegratedNavigation,
+
+    // General systems.
+    /// Integrated Autonomous
+    IntegratedAutonomous,
+    /// Multiplexer
+    Multiplexer,
+    /// Network Device
+    NetworkDevice,
+    /// Record Book
+    RecordBook,
+    /// Microprocessor Controller
+    Microprocessor,
+    /// Voyage Data Recorder
+    VDR,
+    /// Transducer
+    Transducer,
+
+    /// Any other talker, the user-configured `U0` to `U9` among them.
     Other([u8; 2]),
 }
 
 impl TryFrom<&str> for Talker {
     type Error = std::io::Error;
 
-    #[expect(clippy::too_many_lines, reason = "a code table, one arm a talker")]
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         if value.len() != 2 {
             return Err(std::io::Error::new(ErrorKind::InvalidInput, "Invalid length"));
@@ -221,15 +228,15 @@ impl TryFrom<&str> for Talker {
             "AB" => Talker::IndependentAisBaseStation,
             "AD" => Talker::DependentAisBaseStation,
             "AG" => Talker::HeadingController,
-            "AP" => Talker::HeadingControllerMagnetic,
             "AI" => Talker::AIS,
             "AN" => Talker::AisAton,
+            "AP" => Talker::MagneticHeadingController,
             "AR" => Talker::AisReceivingStation,
             "AS" => Talker::AisLimitedBaseStation,
             "AT" => Talker::AisTransmittingStation,
             "AX" => Talker::AisSimplexRepeater,
             "BI" => Talker::Bilge,
-            "BN" => Talker::BridgeAlarm,
+            "BN" => Talker::BridgeWatchAlarm,
             "CA" => Talker::CentralAlarm,
             "CD" => Talker::DSC,
             "CR" => Talker::DataReceiver,
@@ -238,8 +245,8 @@ impl TryFrom<&str> for Talker {
             "CV" => Talker::VhfTelephone,
             "CX" => Talker::ScanningReceiver,
             "DF" => Talker::DirectionFinder,
-            "DU" => Talker::DuplexRepeater,
             "DP" => Talker::DynamicPosition,
+            "DU" => Talker::DuplexRepeater,
             "EC" => Talker::ECS,
             "EI" => Talker::ECDIS,
             "EP" => Talker::EPIRB,
@@ -256,10 +263,10 @@ impl TryFrom<&str> for Talker {
             "GP" => Talker::GPS,
             "GQ" => Talker::QuasiZenith,
             "HC" => Talker::MagneticCompass,
+            "HD" => Talker::HullDoorMonitor,
             "HE" => Talker::NorthSeekingGyroCompass,
             "HF" => Talker::FluxgateCompass,
             "HN" => Talker::NonNorthSeekingGyroCompass,
-            "HD" => Talker::HullDoorMonitor,
             "HS" => Talker::HullStressMonitor,
             "HV" => Talker::Heave,
             "IA" => Talker::IntegratedAutonomous,
@@ -277,8 +284,8 @@ impl TryFrom<&str> for Talker {
             "MX" => Talker::Multiplexer,
             "NA" => Talker::AutonomousNavigation,
             "ND" => Talker::NetworkDevice,
-            "NV" => Talker::NightVision,
             "NL" => Talker::NavigationLight,
+            "NV" => Talker::NightVision,
             "RA" => Talker::Radar,
             "RB" => Talker::RecordBook,
             "RC" => Talker::PropulsionMachinery,
@@ -293,13 +300,13 @@ impl TryFrom<&str> for Talker {
             "TC" => Talker::TrackControlSystem,
             "TI" => Talker::TurnRateIndicator,
             "UP" => Talker::Microprocessor,
+            "VA" => Talker::VdesASM,
             "VD" => Talker::DopplerVelocity,
             "VM" => Talker::MagneticSpeed,
-            "VW" => Talker::MechanicalSpeed,
-            "VA" => Talker::VdesASM,
+            "VR" => Talker::VDR,
             "VS" => Talker::VdesSatellite,
             "VT" => Talker::VdesTerrestrial,
-            "VR" => Talker::VDR,
+            "VW" => Talker::MechanicalSpeed,
             "WD" => Talker::WatertightDoor,
             "WI" => Talker::Weather,
             "WL" => Talker::WaterLevel,
@@ -308,18 +315,6 @@ impl TryFrom<&str> for Talker {
             "ZC" => Talker::Chronometer,
             "ZQ" => Talker::QuartzClock,
             "ZV" => Talker::RadioClock,
-
-            "U0" => Talker::User0,
-            "U1" => Talker::User1,
-            "U2" => Talker::User2,
-            "U3" => Talker::User3,
-            "U4" => Talker::User4,
-            "U5" => Talker::User5,
-            "U6" => Talker::User6,
-            "U7" => Talker::User7,
-            "U8" => Talker::User8,
-            "U9" => Talker::User9,
-
             _ => {
                 let value = value.as_bytes();
                 Self::Other([value[0], value[1]])
@@ -329,21 +324,20 @@ impl TryFrom<&str> for Talker {
 }
 
 impl Display for Talker {
-    #[expect(clippy::too_many_lines, reason = "a code table, one arm a talker")]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Talker::IndependentAisBaseStation => "AB",
             Talker::DependentAisBaseStation => "AD",
             Talker::HeadingController => "AG",
-            Talker::HeadingControllerMagnetic => "AP",
             Talker::AIS => "AI",
             Talker::AisAton => "AN",
+            Talker::MagneticHeadingController => "AP",
             Talker::AisReceivingStation => "AR",
             Talker::AisLimitedBaseStation => "AS",
             Talker::AisTransmittingStation => "AT",
             Talker::AisSimplexRepeater => "AX",
             Talker::Bilge => "BI",
-            Talker::BridgeAlarm => "BN",
+            Talker::BridgeWatchAlarm => "BN",
             Talker::CentralAlarm => "CA",
             Talker::DSC => "CD",
             Talker::DataReceiver => "CR",
@@ -352,8 +346,8 @@ impl Display for Talker {
             Talker::VhfTelephone => "CV",
             Talker::ScanningReceiver => "CX",
             Talker::DirectionFinder => "DF",
-            Talker::DuplexRepeater => "DU",
             Talker::DynamicPosition => "DP",
+            Talker::DuplexRepeater => "DU",
             Talker::ECS => "EC",
             Talker::ECDIS => "EI",
             Talker::EPIRB => "EP",
@@ -370,10 +364,10 @@ impl Display for Talker {
             Talker::GPS => "GP",
             Talker::QuasiZenith => "GQ",
             Talker::MagneticCompass => "HC",
+            Talker::HullDoorMonitor => "HD",
             Talker::NorthSeekingGyroCompass => "HE",
             Talker::FluxgateCompass => "HF",
             Talker::NonNorthSeekingGyroCompass => "HN",
-            Talker::HullDoorMonitor => "HD",
             Talker::HullStressMonitor => "HS",
             Talker::Heave => "HV",
             Talker::IntegratedAutonomous => "IA",
@@ -391,8 +385,8 @@ impl Display for Talker {
             Talker::Multiplexer => "MX",
             Talker::AutonomousNavigation => "NA",
             Talker::NetworkDevice => "ND",
-            Talker::NightVision => "NV",
             Talker::NavigationLight => "NL",
+            Talker::NightVision => "NV",
             Talker::Radar => "RA",
             Talker::RecordBook => "RB",
             Talker::PropulsionMachinery => "RC",
@@ -407,32 +401,21 @@ impl Display for Talker {
             Talker::TrackControlSystem => "TC",
             Talker::TurnRateIndicator => "TI",
             Talker::Microprocessor => "UP",
+            Talker::VdesASM => "VA",
             Talker::DopplerVelocity => "VD",
             Talker::MagneticSpeed => "VM",
-            Talker::MechanicalSpeed => "VW",
-            Talker::VdesASM => "VA",
+            Talker::VDR => "VR",
             Talker::VdesSatellite => "VS",
             Talker::VdesTerrestrial => "VT",
-            Talker::VDR => "VR",
+            Talker::MechanicalSpeed => "VW",
             Talker::WatertightDoor => "WD",
+            Talker::Weather => "WI",
             Talker::WaterLevel => "WL",
             Talker::Transducer => "YX",
             Talker::AtomicClock => "ZA",
             Talker::Chronometer => "ZC",
             Talker::QuartzClock => "ZQ",
             Talker::RadioClock => "ZV",
-            Talker::Weather => "WI",
-
-            Talker::User0 => "U0",
-            Talker::User1 => "U1",
-            Talker::User2 => "U2",
-            Talker::User3 => "U3",
-            Talker::User4 => "U4",
-            Talker::User5 => "U5",
-            Talker::User6 => "U6",
-            Talker::User7 => "U7",
-            Talker::User8 => "U8",
-            Talker::User9 => "U9",
             Talker::Other(val) => str::from_utf8(val).map_err(|_| std::fmt::Error)?,
         };
         f.write_str(s)

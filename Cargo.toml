@@ -2,9 +2,9 @@
 name = "nmea_codec"
 version = "0.1.0"
 edition = "2024"
-description = "A codec for NMEA 0183/IEC 61162-1 messages"
+description = "A codec for sentences such as those defined by NMEA 0183 or IEC 61162-1, with tag blocks and AIS encapsulation"
 license = "Apache-2.0"
-keywords = ["nmea", "iso61162", "ais"]
+keywords = ["iec61162", "nmea", "ais"]
 categories = ["parser-implementations"]
 repository = "https://github.com/aeolionics-rs/nmea_codec.git"
 

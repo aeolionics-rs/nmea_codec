@@ -2,7 +2,7 @@
 //
 //  SPDX-License-Identifier: Apache-2.0
 
-//! A codec for `NMEA 0183`/`IEC 61162-1` sentences,
+//! A codec for sentences such as those defined by `NMEA 0183` or `IEC 61162-1`,
 //! with support for tag blocks and encapsulated messages such as sentences used for `AIS`.
 //!
 //! The crate defines native message for well-known formats.
@@ -11,7 +11,7 @@
 //! Conversion to text is performed during encoding and decoding.
 //! The implementation also supports `Proprietary` and `Query` sentences.
 //!
-//! Encodes and decodes NMEA sentences to [`BytesMut`] buffers using the Tokio codec framework.
+//! Encodes and decodes sentences to [`BytesMut`] buffers using the Tokio codec framework.
 //! The implementation does not require an async runtime but does require an allocator.
 //!
 //! The `ais` feature enables binding to type-safe messages; if this feature is not enabled then
@@ -86,7 +86,7 @@
 //! If required, the encoder will split the encapsulated message into multiple sentences to fit
 //! within the [`MAX_SENTENCE`] limit.
 
-/// A [`Decoder`] and [`Encoder`] for NMEA 0183 messages.
+/// A [`Decoder`] and [`Encoder`] for messages.
 ///
 /// [`Decoder`]: Decoder
 /// [`Encoder`]: Encoder
@@ -131,7 +131,7 @@ pub const MAX_SENTENCE: usize = 82;
 /// Maximum number of ASCII characters in the data fields, excluding the delimiters and checksum.
 pub const MAX_DATA: usize = MAX_SENTENCE - 1 - 3 - 2;
 
-/// A [`Decoder`] and [`Encoder`] for NMEA 0183 messages.
+/// A [`Decoder`] and [`Encoder`] for messages.
 ///
 /// # Decoding
 /// Each line is decoded to a message, or to the error that made it invalid. A line with a bad
@@ -332,7 +332,7 @@ impl NmeaCodec {
     }
 }
 
-/// A NMEA 0183 message.
+/// A message.
 ///
 /// **Message format:** \[`tag_block` ...\] \<sentence\> \r\n
 #[derive(Clone)]
@@ -341,7 +341,7 @@ pub struct Message {
     pub sentence: Sentence,
 }
 
-/// Well-known NMEA 0183 sentences.
+/// Well-known sentences.
 #[derive(Clone, Debug)]
 pub enum Sentence {
     // Well-known parametric sentences.

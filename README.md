@@ -1,7 +1,7 @@
-NMEA Codec
+nmea_codec
 ==========
 
-A codec for `NMEA 0183`/`IEC 61162-1` sentences,
+A codec for sentences such as those defined by `NMEA 0183` or `IEC 61162-1`,
 with support for tag blocks and encapsulated messages such as sentences used for `AIS`.
 
 The crate defines native message for well-known formats.
@@ -10,7 +10,7 @@ Messages are modeled in a Rust-native form, using the `uom` crate to improve typ
 Conversion to text is performed during encoding and decoding.
 The implementation also supports `Proprietary` and `Query` sentences.
 
-Encodes and decodes NMEA sentences to `BytesMut` buffers using the Tokio codec framework.
+Encodes and decodes sentences to `BytesMut` buffers using the Tokio codec framework.
 The implementation does not require an async runtime but does require an allocator.
 
 The `ais` feature enables binding to type-safe messages; if this feature is not enabled then
