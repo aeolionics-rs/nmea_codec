@@ -2,3 +2,8 @@ Cargo.lock
 target/
 .idea
 .DS_Store
+
+# IDEs and desktop files
+.idea/
+.vscode/
+*.iml
